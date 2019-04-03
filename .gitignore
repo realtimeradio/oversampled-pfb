@@ -1,0 +1,11 @@
+# ignore file
+
+# directories
+sandbox/
+
+# matlab
+*.m~
+
+# binary files
+*.out
+*.dat
