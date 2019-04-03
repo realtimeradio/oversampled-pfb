@@ -11,11 +11,13 @@
 #include <boost/random/variate_generator.hpp>
 #include <boost/random/normal_distribution.hpp>
 
+typedef signed char data_t;
+
 int main() {
 
   const std::string fname = "data/data.dat";
   std::ofstream fp;
-  fp.open(fname);
+  fp.open(fname, std::ios::binary);
 
 
   unsigned int M = 32;  // polyphase branches (NFFT)
@@ -25,13 +27,18 @@ int main() {
 
   float fs = 10e3;   // sample rate (Hz)
   float f_soi = 4e3; // SOI sample rate (Hz)
-  int   t = 2;       // simulation time length (seconds)
+  float t = 2;       // simulation time length (seconds)
   float T = 1/fs;    // sample period (seconds)
 
   int Nsamps = fs*t;
 
+  char nbytes = sizeof(data_t);
+
   // write simulation info to file
-  fp << t << "," << fs << std::endl;
+  //fp << t << "," << fs << std::endl; 
+  fp.write(&nbytes, sizeof(char));
+  fp.write((char*) &t, sizeof(float));
+  fp.write((char*) &fs, sizeof(float));
 
   // initialize noise generator
   boost::mt19937 engine = boost::mt19937(time(0));
@@ -40,22 +47,24 @@ int main() {
         boost::variate_generator<boost::mt19937, boost::normal_distribution<double>>(engine, dist);
 
   // data generation and pointers. Complex exponential and white noise
-  float data_re[Nsamps];
-  float data_im[Nsamps];
+  data_t data_re[Nsamps];
+  data_t data_im[Nsamps];
 
-  float *data_ptr_re = data_re;
-  float *data_ptr_im = data_im;
+  data_t *data_ptr_re = data_re;
+  data_t *data_ptr_im = data_im;
 
-  float *dataEnd_re = data_re + Nsamps;
-  float *dataEnd_im = data_im + Nsamps;
+  data_t *dataEnd_re = data_re + Nsamps;
+  data_t *dataEnd_im = data_im + Nsamps;
 
+  #define SCALE_FACTOR 127 // to keep values between -127 and 128
   float omega = 2*M_PI*f_soi/fs;
   for (int i=0; i < Nsamps; i++) {
-    data_re[i] = cos(omega*i) + gen();
-    data_im[i] = sin(omega*i) + gen();
-    fp << data_re[i] << "," << data_im[i] << std::endl;
+    data_re[i] = SCALE_FACTOR*0.1*cos(omega*i) + SCALE_FACTOR*0.1*gen();
+    data_im[i] = SCALE_FACTOR*0.1*sin(omega*i) + SCALE_FACTOR*0.1*gen();
+    //fp << data_re[i] << data_im[i];
+    fp.write((char*) &data_re[i], sizeof(data_t)); // inefficient to write each loop iter, but not worried about that now
+    fp.write((char*) &data_im[i], sizeof(data_t));
   }
-
 
   float filter_state_re[L]; // real filter products
   float filter_state_im[L]; // imaginary filter products
@@ -84,6 +93,5 @@ int main() {
 
 
   fp.close();
-  std::cout << "Ran without problems...\n";
   return 0;
 }
