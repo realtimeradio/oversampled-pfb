@@ -5,13 +5,13 @@
 
 #include <math.h> // cos, sin
 
-// for white noise generation (should look into lsfr as a generator)
+// for white noise generation (should look into lsfr as a generator for synthesis)
 #include <boost/random.hpp>
 #include <boost/random/mersenne_twister.hpp>
 #include <boost/random/variate_generator.hpp>
 #include <boost/random/normal_distribution.hpp>
 
-typedef signed char data_t;
+#include "../os_pfb.h"
 
 int main() {
 
