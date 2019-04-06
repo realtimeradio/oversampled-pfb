@@ -11,7 +11,11 @@ hann = hanning(L).';
 
 h = x.*hann;
 
-fname = "/home/mcb/git/alpaca/oversampled-pfb/csim/coeff.h";
+fname = "/home/mcb/git/alpaca/oversampled-pfb/csim/coeff.dat";
 fp = fopen(fname, 'w+');
-fprintf(fp, '0x%tx,\n', h); 
+% learned that c++ has no built conversion from hex to float and so a hex
+% representation file to be included for an array becomes unsinged longs or
+% something like that. The only form in the standard is to have them
+% represented as text
+fprintf(fp, '%g,\n', h);
 
