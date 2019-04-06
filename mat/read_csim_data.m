@@ -7,6 +7,13 @@ fp = fopen(fname);
 % read in simulation parameters
 nbytes = fread(fp, 1, 'char');
 nbits = nbytes*8;
+% after modifying the cpp code to use the std::complex data type my
+% pervious code wouldn't work because the nbytes written by cpp was for a
+% single complex element now instead of a single real or imaginary part.
+% But for now if I divide by 2 the code I wrote now works. TODO: come back
+% and modify
+nbits = nbits/2;
+
 precLabel = ['bit', int2str(nbits), '=>float32'];
 
 Nparams = 2; % time (s), Fs (Hz)
