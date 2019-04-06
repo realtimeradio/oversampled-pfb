@@ -6,6 +6,7 @@ sandbox/
 # matlab
 *.m~
 
-# binary files
+# binary and data files
+*.bin
 *.out
 *.dat
