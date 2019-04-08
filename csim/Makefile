@@ -10,7 +10,7 @@ SRC = $(wildcard *.cpp)
 OBJ = $(wildcard *.o)
 
 # Extract Vivado HLS include path
-VHLS_PATH := $(dir $(shell which vivado_hls))/..
+VHLS_PATH := $(dir $(shell which vivado_hls))..
 VHLS_INC ?= ${VHLS_PATH}/include
 
 # Specify compilation flags
