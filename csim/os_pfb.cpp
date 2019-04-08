@@ -3,7 +3,7 @@
 
 #include "os_pfb.h" // need to fix these path issues
 
-void os_pfb(cx_datain_t *in, cx_dataout_t *out, int* shift_states)
+void os_pfb(cx_datain_t *in, cx_dataout_t *out, int* shift_states, bool* overflow)
 {
   // filter taps
   const coeff_t h[L] = {
@@ -59,6 +59,16 @@ void os_pfb(cx_datain_t *in, cx_dataout_t *out, int* shift_states)
   shift_states[0] = tmp;
 
   //ifft computation
+  os_pfb_config_t ifft_config;
+  os_pfb_status_t ifft_status;
+
+  // configure fft as inverse transform
+  ifft_config.setDir(0);
+
+  hls::fft<os_pfb_config>(ifft_buffer, out, &ifft_status, &ifft_config);
+
+  *overflow = ifft_status.getOvflo() & 0x1;
+
 
   return;
 }

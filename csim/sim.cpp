@@ -15,12 +15,12 @@
 
 int main() {
 
-  const std::string fname = "data/data.dat";
+  std::string fname = "data/data.dat";
   std::ofstream fp;
   fp.open(fname, std::ios::binary);
 
   float fs = 10e3;   // sample rate (Hz)
-  float f_soi = 4e3; // SOI sample rate (Hz)
+  float f_soi = 7e3; // SOI sample rate (Hz)
   float t = 2;       // simulation time length (seconds)
   float T = 1/fs;    // sample period (seconds)
 
@@ -40,7 +40,7 @@ int main() {
   std::cout << "\t Decimation rate (D)         : " << D << "\n";
   std::cout << "\t Protoype Filter taps (L)    : " << L << "\n";
   std::cout << "\t Polyphase filter taps (L/M) : " << P << "\n";
-  std::cout << "\t Frequency shift compinsation: [ ";
+  std::cout << "\t Frequency shift compensation: [ ";
   for (int i=0; i < SHIFT_STATES; ++i) std::cout << shift_states[i] << " ";
   std::cout << "]\n";
 
@@ -75,6 +75,7 @@ int main() {
     // inefficient to write each loop iter, but not worried about that now
     fp.write((char*) &data[i], sizeof(cx_datain_t));
   }
+  fp.close(); // close data file
 
   // initialize input/output pointers and counters
   int window_ctr = 0;
@@ -83,13 +84,15 @@ int main() {
   cx_datain_t *pfb_input = data;
   cx_datain_t *dataEnd = data + Nsamps;
 
+  bool overflow;
+
   // begin filtering
   while (pfb_input < dataEnd-D) {
 
     cx_dataout_t output[M];
 
     // filter
-    os_pfb(pfb_input, output, shift_states);
+    os_pfb(pfb_input, output, shift_states, &overflow);
 
     // copy output
     for (int i=0; i < M; ++i) {
@@ -101,8 +104,19 @@ int main() {
     window_ctr += 1;
 
   }
-
   std::cout << "\nFinished processing! (windows=" << window_ctr << ")\n\n";
-  fp.close();
+
+  // open a file to writeout results for processing
+  fname = "data/out.dat";
+  fp.open(fname, std::ios::binary);
+
+
+  for (int w=0; w < windows; ++w) {
+    for (int m=0; m < M; ++m) {
+      fp.write((char*) &pfb_output[m][w], sizeof(cx_dataout_t));
+    }
+  }
+  fp.close(); // close out.dat
+
   return 0;
 }
