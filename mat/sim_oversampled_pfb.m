@@ -24,7 +24,7 @@ h = x.*hann;
 
 % Data generation
 fs = 10e3;   % sample rate (Hz)
-f  = 5.5e3;  % SOI frequency (Hz)
+f  = 2e3;  % SOI frequency (Hz)
 t = 2;       % simulation time (seconds)
 T = 1/fs;    % sample period (seconds)
 
@@ -50,12 +50,23 @@ while data_ptr < length(x)-D
   % rotate filter state and shift new samples in by decimation rate
   filter_state = circshift(filter_state, -D);
   filter_state(end-D+1:end) = x(data_ptr:data_ptr+D-1);
+  %NOTE: The commented lines here would be how data could be shifted in a
+  %sort of streaming 'serial' example where the data moves up the array
+  %like a shift register instead of down like the orginal committed
+  %version. This removes the L (filter_length) offset from the multiply
+  %accumulate step of the polyphase filters and the index match the same as
+  %the h filter (but it always could have matched because we are designing
+  %here for a symmetric FIR filter -- it wouldn't be the case if the filter
+  %were not symmetric I don't think).
+%   filter_state = circshift(filter_state, D);
+%   filter_state(1:D) = flip(x(data_ptr:data_ptr+D-1));
   data_ptr = data_ptr + D;
   
   % polyphase filter computation
   for m = 0:M-1
     for p = 0:P-1
       ifft_buffer(m+1) = ifft_buffer(m+1) + h(p*M+m+1)*filter_state(L-p*M-m);
+%       ifft_buffer(m+1) = ifft_buffer(m+1) + h(p*M+m+1)*filter_state(p*M+m+1);
     end
   end
 
