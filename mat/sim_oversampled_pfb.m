@@ -53,7 +53,10 @@ while data_ptr < length(x)-D
   %NOTE: The commented lines here would be how data could be shifted in a
   %sort of streaming 'serial' example where the data moves up the array
   %like a shift register instead of down like the orginal committed
-  %version. This removes the L (filter_length) offset from the multiply
+  %version. I.e., this would implement exactly how fjh explains in his
+  %chapter, that you start at port D and move up to zero. That is what the
+  %The flip does, it positions the first sample at D, going to zero.
+  %This removes the L (filter_length) offset from the multiply
   %accumulate step of the polyphase filters and the index match the same as
   %the h filter (but it always could have matched because we are designing
   %here for a symmetric FIR filter -- it wouldn't be the case if the filter
