@@ -1,54 +1,47 @@
 #include <stdio.h>
 #include <iostream>
 
-#include "os_pfb.h" // need to fix these path issues
+#include "os_pfb.h"
 
-void os_pfb(cx_datain_t *in, cx_dataout_t *out, int* shift_states, bool* overflow)
+void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], int shift_states[SHIFT_STATES], bool* overflow)
 {
+#pragma HLS interface ap_fifo depth=FFT_LENGTH port=in,out
+#pragma HLS interface ap_fifo depth=1 port=overflow
+#pragma HLS data_pack variable=in
+#pragma HLS data_pack variable=out
+#pragma HLS dataflow
+
   // filter taps
   const coeff_t h[L] = {
     #include "coeff.dat"
   };
 
-  // static persistent state variables to exist between function calls
-  static cx_dataout_t filter_state[L];   // real filter products
-  cx_dataout_t ifft_buffer[M]; // input data to the fft (remember dum dum... set to zero (not static)
-
-  // amount to shift data to line up with correct fft port
-  static unsigned char shift_state[SHIFT_STATES];
-
-  cx_dataout_t *state = filter_state;
-  cx_dataout_t *stateEnd = filter_state + L;
-
-  // move filter state down
-  for (int i=0; i < L-D; ++i) {
-    filter_state[i] = filter_state[i+D];
+  // move filter state up
+  static cx_dataout_t filter_state[L];
+  for (int i=L-1; i >= D; --i) {
+    filter_state[i] = filter_state[i-D];
   }
 
   // copy new data in
-  for (int i=L-D, k=0; i < L; ++i, ++k) {
-    filter_state[i] = in[k];
+  for (int i = D-1; i >= 0; --i) {
+      filter_state[i] = in[i];
   }
 
   // fir filtering
+  cx_dataout_t filter_out[M] = { 0 };
   for (int m=0; m < M; ++m) {
     for (int p = 0; p < P; ++p) {
-      ifft_buffer[m] = ifft_buffer[m] + h[p*M+m]*filter_state[L-p*M-m-1];
+      filter_out[m] = filter_out[m] + h[p*M+m]*filter_state[p*M+m];
     }
   }
 
   //apply phase correction
   int shift = shift_states[0];
-
-  // repeat 'shift' times
-  for (int i=0; i < shift ; ++i) {
-
-    // shift up by one and copy end to beginning
-    cx_dataout_t tmp = ifft_buffer[M-1];
-    for (int i=M-1; i > 0; --i) {
-      ifft_buffer[i] = ifft_buffer[i-1];
-    }
-    ifft_buffer[0] = tmp;
+  int oidx;
+  cx_dataout_t ifft_buffer[M] = { 0 };
+  for (int i=0; i<M; ++i) {
+    oidx = (i+shift) % M;
+    ifft_buffer[oidx] = filter_out[i];
   }
 
   // move shift array up by one and copy end to beginning
@@ -62,8 +55,7 @@ void os_pfb(cx_datain_t *in, cx_dataout_t *out, int* shift_states, bool* overflo
   os_pfb_config_t ifft_config;
   os_pfb_status_t ifft_status;
 
-  // configure fft as inverse transform
-  ifft_config.setDir(0);
+  ifft_config.setDir(0); // inverse transform
 
   hls::fft<os_pfb_config>(ifft_buffer, out, &ifft_status, &ifft_config);
 

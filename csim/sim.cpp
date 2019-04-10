@@ -68,9 +68,12 @@ int main() {
 
   #define SCALE_FACTOR 127 // to keep values between -127 and 128
   float omega = 2*M_PI*f_soi/fs;
-  for (int i=0; i < Nsamps; i++) {
-    data[i].real( SCALE_FACTOR*0.1*cos(omega*i) + SCALE_FACTOR*0.1*gen() );
-    data[i].imag( SCALE_FACTOR*0.1*sin(omega*i) + SCALE_FACTOR*0.1*gen() );
+  // Note that for the non-streaming formulation the new iterator n represents is the sample
+  // index (time series) and is a separate iterator variable from 'i'because time still has
+  // to start at 0 even though filling the array backwards
+  for (int i=Nsamps-1, n=0; i >= 0; --i, ++n) {
+    data[i].real( SCALE_FACTOR*0.1*cos(omega*n) + SCALE_FACTOR*0.1*gen() );
+    data[i].imag( SCALE_FACTOR*0.1*sin(omega*n) + SCALE_FACTOR*0.1*gen() );
     //fp << data_re[i] << data_im[i];
     // inefficient to write each loop iter, but not worried about that now
     fp.write((char*) &data[i], sizeof(cx_datain_t));
@@ -81,13 +84,17 @@ int main() {
   int window_ctr = 0;
   cx_dataout_t pfb_output[M][windows];
 
-  cx_datain_t *pfb_input = data;
+  cx_datain_t *dataStart = data;
   cx_datain_t *dataEnd = data + Nsamps;
+  cx_datain_t *pfb_input = dataEnd - D;
 
   bool overflow;
 
   // begin filtering
-  while (pfb_input < dataEnd-D) {
+  // Note that for the non-streaming formulation (advancing the data pointer instead of decrementing)
+  // the comparison had to make sure that we still had data to process... but to get the window sizes
+  // to match in the streaming case we don't. Need to convince myself more.
+  while (pfb_input > dataStart) {
 
     cx_dataout_t output[M];
 
@@ -100,7 +107,7 @@ int main() {
     }
 
     // advance input ptrs and window ctr
-    pfb_input += D;
+    pfb_input -= D;
     window_ctr += 1;
 
   }
