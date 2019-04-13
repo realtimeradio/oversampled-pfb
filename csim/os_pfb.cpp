@@ -3,10 +3,12 @@
 
 #include "os_pfb.h"
 
-void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], int shift_states[SHIFT_STATES], bool* overflow)
+//void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], int shift_states[SHIFT_STATES], bool* overflow)
+void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], bool* overflow)
 {
-#pragma HLS interface ap_fifo depth=FFT_LENGTH port=in,out
-#pragma HLS interface ap_fifo depth=1 port=overflow
+//#pragma HLS interface ap_fifo depth=FFT_LENGTH port=in,out
+//#pragma HLS interface ap_fifo depth=1 port=overflow
+#pragma HLS interface axis depth=FFT_LENGTH port=in,out
 #pragma HLS data_pack variable=in
 #pragma HLS data_pack variable=out
 #pragma HLS dataflow
@@ -16,22 +18,30 @@ void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], int shift_states[SHIFT_STATE
     #include "coeff.dat"
   };
 
-  // move filter state up
+  // shift states that have been pre-determined. Need to figure out how to auto-generate
+  static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
+
   static cx_dataout_t filter_state[L];
-  for (int i=L-1; i >= D; --i) {
-    filter_state[i] = filter_state[i-D];
-  }
 
-  // copy new data in
-  for (int i = D-1; i >= 0; --i) {
-      filter_state[i] = in[i];
-  }
-
-  // fir filtering
   cx_dataout_t filter_out[M] = { 0 };
-  for (int m=0; m < M; ++m) {
-    for (int p = 0; p < P; ++p) {
-      filter_out[m] = filter_out[m] + h[p*M+m]*filter_state[p*M+m];
+
+  // Note: in the fir loop...
+  // interchange p and m iterators for m to be fastest moving for sequential memory access. This can be seen from
+  // the 'idx' variable because m is the fastest moving element and the fact p is multiplied by M shows that p controls
+  // row jumps (if it were a two dimensional data structure--which it is in the model/block diagram).
+
+  // shift/capture samples and polyphase fir filter
+  for (int p = P-1; p >= 0 ; --p) {
+    for (int m = M-1; m >= 0; --m) {
+      int idx = p*M+m;
+
+      if (idx <= D-1) {
+        filter_state[idx] = in[idx];
+      } else {
+        filter_state[idx] = filter_state[idx-D];
+      }
+
+      filter_out[m] = filter_out[m] + h[idx]*filter_state[idx];
     }
   }
 
@@ -57,10 +67,18 @@ void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], int shift_states[SHIFT_STATE
 
   ifft_config.setDir(0); // inverse transform
 
-  hls::fft<os_pfb_config>(ifft_buffer, out, &ifft_status, &ifft_config);
+//  hls::fft<os_pfb_config>(ifft_buffer, out, &ifft_status, &ifft_config);
+  cx_dataout_t ifft_out[M] = { 0 };
+  hls::fft<os_pfb_config>(ifft_buffer, ifft_out, &ifft_status, &ifft_config);
 
   *overflow = ifft_status.getOvflo() & 0x1;
 
+  // hls::fft implements the output as an ap_fifo (although the HLS documentation says it is a stream? Unless
+  // stream and ap_fifo are synonyms and so I had to add another variable to explicittly set as an axi stream.
+  // Also interesting that I had to start at i=0 and copy out to M. Couldn't do what I had been doing
+  // of starting at the end of the array. I wonder if this is has to do with how hls::fft fills ifft_out
+  for (int i=0; i<M; ++i)
+    out[i] = ifft_out[i];
 
   return;
 }

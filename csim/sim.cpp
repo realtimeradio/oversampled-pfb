@@ -99,7 +99,8 @@ int main() {
     cx_dataout_t output[M];
 
     // filter
-    os_pfb(pfb_input, output, shift_states, &overflow);
+//    os_pfb(pfb_input, output, shift_states, &overflow);
+    os_pfb(pfb_input, output, &overflow);
 
     // copy output
     for (int i=0; i < M; ++i) {
