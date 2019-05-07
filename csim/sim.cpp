@@ -20,7 +20,7 @@ int main() {
   fp.open(fname, std::ios::binary);
 
   float fs = 10e3;   // sample rate (Hz)
-  float f_soi = 7e3; // SOI sample rate (Hz)
+  float f_soi = 2e3; // SOI sample rate (Hz)
   float t = 2;       // simulation time length (seconds)
   float T = 1/fs;    // sample period (seconds)
 
@@ -95,8 +95,8 @@ int main() {
   // the comparison had to make sure that we still had data to process... but to get the window sizes
   // to match in the streaming case we don't. Need to convince myself more.
   while (pfb_input > dataStart) {
-
-    cx_dataout_t output[M];
+//    cx_dataout_t output[M];
+    os_pfb_axis_t output[M];
 
     // filter
 //    os_pfb(pfb_input, output, shift_states, &overflow);
@@ -104,7 +104,7 @@ int main() {
 
     // copy output
     for (int i=0; i < M; ++i) {
-      pfb_output[i][window_ctr] = output[i];
+      pfb_output[i][window_ctr] = output[i].data;
     }
 
     // advance input ptrs and window ctr

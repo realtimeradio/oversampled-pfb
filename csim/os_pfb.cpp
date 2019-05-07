@@ -4,10 +4,9 @@
 #include "os_pfb.h"
 
 //void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], int shift_states[SHIFT_STATES], bool* overflow)
-void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], bool* overflow)
+void os_pfb(cx_datain_t in[M], os_pfb_axis_t out[M], bool* ovflow)
 {
-//#pragma HLS interface ap_fifo depth=FFT_LENGTH port=in,out
-//#pragma HLS interface ap_fifo depth=1 port=overflow
+#pragma HLS interface axis depth=1 port=ovflow
 #pragma HLS interface axis depth=FFT_LENGTH port=in,out
 #pragma HLS data_pack variable=in
 #pragma HLS data_pack variable=out
@@ -70,15 +69,16 @@ void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], bool* overflow)
 //  hls::fft<os_pfb_config>(ifft_buffer, out, &ifft_status, &ifft_config);
   cx_dataout_t ifft_out[M] = { 0 };
   hls::fft<os_pfb_config>(ifft_buffer, ifft_out, &ifft_status, &ifft_config);
-
-  *overflow = ifft_status.getOvflo() & 0x1;
+  *ovflow = ifft_status.getOvflo() & 0x1;
 
   // hls::fft implements the output as an ap_fifo (although the HLS documentation says it is a stream? Unless
   // stream and ap_fifo are synonyms and so I had to add another variable to explicittly set as an axi stream.
   // Also interesting that I had to start at i=0 and copy out to M. Couldn't do what I had been doing
   // of starting at the end of the array. I wonder if this is has to do with how hls::fft fills ifft_out
-  for (int i=0; i<M; ++i)
-    out[i] = ifft_out[i];
+  for (int i=0; i<M; ++i) {
+    out[i].data = ifft_out[i];
+    out[i].last = (i==M-1) ? 1 : 0;
+  }
 
   return;
 }
