@@ -14,7 +14,11 @@ nbits = nbytes*8;
 % and modify
 nbits = nbits/2;
 
-precLabel = ['bit', int2str(nbits), '=>float32'];
+% Modified the data type on the OS PFB to test with floats. Therefore, for
+% now don't need to read in chars and cast to floats. But having this in
+% the future will help and could look into making it automatic.
+% precLabel = ['bit', int2str(nbits), '=>float32'];
+precLabel = ['float32'];
 
 Nparams = 2; % time (s), Fs (Hz)
 params = fread(fp, Nparams, 'float32');

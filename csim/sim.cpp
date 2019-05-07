@@ -20,8 +20,8 @@ int main() {
   fp.open(fname, std::ios::binary);
 
   float fs = 10e3;   // sample rate (Hz)
-  float f_soi = 2e3; // SOI sample rate (Hz)
-  float t = 2;       // simulation time length (seconds)
+  float f_soi = 7e3; // SOI sample rate (Hz)
+  float t = .05;       // simulation time length (seconds)
   float T = 1/fs;    // sample period (seconds)
 
   int Nsamps = fs*t;
@@ -66,14 +66,30 @@ int main() {
   // data generation and pointers. Complex exponential and white noise
   cx_datain_t data[Nsamps];
 
-  #define SCALE_FACTOR 127 // to keep values between -127 and 128
+  // quantize data to (-1, 1) for per FFT core requirements
+  // TODO: our input will be 8-bit real/imag and scaling may need to happen in the core
+  // I noticed that in the FFT output there is a a bias at the 0 Hz bin. Is this because of the
+  // subtract by 0.5 in the quantization?
+  float D_MAX = 127.0;
+  float D_MIN = -128.0;
+  float QUANT = D_MAX-D_MIN;
+
+  float signalPower = 20;
+  float noisePower = 10;
+  float signalAmp = sqrt(signalPower);
+  float noiseAmp = sqrt(noisePower/2.0);
+
   float omega = 2*M_PI*f_soi/fs;
   // Note that for the non-streaming formulation the new iterator n represents is the sample
   // index (time series) and is a separate iterator variable from 'i'because time still has
   // to start at 0 even though filling the array backwards
   for (int i=Nsamps-1, n=0; i >= 0; --i, ++n) {
-    data[i].real( SCALE_FACTOR*0.1*cos(omega*n) + SCALE_FACTOR*0.1*gen() );
-    data[i].imag( SCALE_FACTOR*0.1*sin(omega*n) + SCALE_FACTOR*0.1*gen() );
+    float re = signalAmp*cos(omega*n) + noiseAmp*gen();
+    float im = signalAmp*sin(omega*n) + noiseAmp*gen();
+
+    data[i].real( (re-D_MIN)/QUANT - 0.5 );
+    data[i].imag( (im-D_MIN)/QUANT - 0.5 );
+
     //fp << data_re[i] << data_im[i];
     // inefficient to write each loop iter, but not worried about that now
     fp.write((char*) &data[i], sizeof(cx_datain_t));
