@@ -5,13 +5,11 @@
 #include "hls_fft.h"
 
 #define M 32  // polyphase branches (NFFT)
-//#define D 24  // Decimation rate (D <= M)
 #define D 16  // Decimation rate (D <= M)
 #define L 256 // Taps in prototype FIR filter
 #define P L/M // Taps in branch of polyphase FIR filter
 
-//#define SHIFT_STATES 4 // for the above D=24, M=32 there are 4 shifting states
-#define SHIFT_STATES 2 // for the above D=16, M=32 there are 4 shifting states
+#define SHIFT_STATES 4 // for the above D=24, M=32 there are 4 shifting states
 
 // Vivado FFT IP configuration
 const int FFT_LENGTH = M;

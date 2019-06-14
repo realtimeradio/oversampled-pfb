@@ -21,7 +21,7 @@ int main() {
 
   float fs = 10e3;   // sample rate (Hz)
   float f_soi = 7e3; // SOI sample rate (Hz)
-  float t = .05;       // simulation time length (seconds)
+  float t = .10;       // simulation time length (seconds)
   float T = 1/fs;    // sample period (seconds)
 
   int Nsamps = fs*t;

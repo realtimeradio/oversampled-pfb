@@ -11,13 +11,12 @@ void polyphase_filter(cx_datain_t in[M], cx_dataout_t filter_out[M], os_pfb_conf
   };
 
   // shift states that have been pre-determined. Need to figure out how to auto-generate
-//    static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
-  static int shift_states[SHIFT_STATES] = {0, 16};
+  static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
 
   ifft_config->setDir(0); //inverse transform
 
   static cx_dataout_t filter_state[L];
-  cx_dataout_t temp[M];
+  cx_dataout_t temp[M]; // need a temp variable to not violate dataflow requirements in synthesis
   // Note: in the fir loop...
   // interchange p and m iterators for m to be fastest moving for sequential memory access. This can be seen from
   // the 'idx' variable because m is the fastest moving element and the fact p is multiplied by M shows that p controls
@@ -63,8 +62,8 @@ void polyphase_filter(cx_datain_t in[M], cx_dataout_t filter_out[M], os_pfb_conf
 void apply_phase_correction (cx_dataout_t filter_out[M], cx_dataout_t ifft_buffer[M]) {
 
   // shift states that have been pre-determined. Need to figure out how to auto-generate
-//  static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
-  static int shift_states[SHIFT_STATES] = {0, 16};
+  static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
+  //static int shift_states[SHIFT_STATES] = {0, 16};
 
   //apply phase correction
   int shift = shift_states[0];
