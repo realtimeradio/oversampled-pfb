@@ -2,6 +2,8 @@
 
 # directories
 sandbox/
+vivado/
+os_pfb_prj/
 
 # matlab
 *.m~
