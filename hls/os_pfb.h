@@ -5,7 +5,7 @@
 #include "hls_fft.h"
 
 #define M 32  // polyphase branches (NFFT)
-#define D 16  // Decimation rate (D <= M)
+#define D 24  // Decimation rate (D <= M)
 #define L 256 // Taps in prototype FIR filter
 #define P L/M // Taps in branch of polyphase FIR filter
 
@@ -32,7 +32,7 @@ typedef hls::ip_fft::config_t<os_pfb_config> os_pfb_config_t;
 typedef hls::ip_fft::status_t<os_pfb_config> os_pfb_status_t;
 
 //void os_pfb(cx_datain_t in[M], cx_dataout_t out[M], int shift_states[SHIFT_STATES], bool* overflow);
-void os_pfb(cx_datain_t in[M], os_pfb_axis_t out[M], bool* overflow);
+void os_pfb(cx_datain_t in[D], os_pfb_axis_t out[M], bool* overflow);
 
 #endif // OS_PFB_H
 
