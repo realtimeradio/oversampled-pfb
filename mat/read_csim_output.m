@@ -54,29 +54,26 @@ channels_fbins_fine = D*Nfft_fine;     % total number of channels in the fine 'z
  
 
 fbins_fine_full = 0:total_channels-1;              % unpruned spectrum bins
-faxis_fine_full = fbins_fine_full*fs_os/Nfft_fine; % unpruned frequency axis
-
-% I want to figure out why waht was wrong here with the commented out
-% fbins_os. Becuase I understand that I am starting at the left channel
-% edge minus how many channels are discared for being oversampled but I
-% don't know yet why my algorithm for stepping was wrong. Instead I here
-% just start at 0 and go to number of remaning channels minus 1 and then
-% apply the hsov shift to the left and then multiply by the fine channel
-% oversampled bin width (fs_decimated/Nfft)
-% I also learned that Brian shifts his up so that frequencies are greater
-% than zero where I start with negative frequencies. This would seem to be
-% that the difference is that I start with zero being a bin center and he
-% starts with zero being a far left channel edge.
+faxis_fine_full = fbins_fine_full*fs_cs/Nfft_fine; % unpruned frequency axis
 
 fshift = -(Nfft_fine/2-hsov+1);
-fbins_fine = 0:channels_fbins_fine-1 + fshift;  % pruned spectrum bins
-faxis_fine = fbins_fine*fs_os/Nfft_fine;        % pruned frequency axis
+fbins_fine = (0:channels_fbins_fine-1) + fshift;  % pruned spectrum bins
+faxis_fine = fbins_fine*fs_os/Nfft_fine;          % pruned frequency axis
 
-pfb_output_spectrum = fftshift(fft(os_pfb_output(:, offset:Nfft_fine+offset), Nfft_fine, 2), 2)/Nfft_fine; % apply the fft across the matrix
+% pfb_output_spectrum = fftshift(fft(os_pfb_output(:, offset:Nfft_fine+offset-1), Nfft_fine, 2), 2)/Nfft_fine; % apply the fft across the matrix
+pfb_output_spectrum = fft(os_pfb_output(:, offset:Nfft_fine+offset-1), Nfft_fine, 2)/Nfft_fine; % apply the fft across the matrix
 pfb_output_spectrum_full = reshape(pfb_output_spectrum.', [1, total_channels]);
 
 zoom_pfb_spectrum = pfb_output_spectrum(:, hsov:end-hsov-1);
+zoom_pfb_stitch = reshape(zoom_pfb_spectrum.', [1, channels_fbins_fine]);
 
+figure(5);
+for m = 1:M
+    subplot(4,8,m);
+    subbins_full = (m-1)*Nfft_fine:((m-1)*Nfft_fine+Nfft_fine-1);
+    plot(subbins_full, 20*log10(abs(pfb_output_spectrum(m,:)))); grid on;
+    xlim([min(subbins_full), max(subbins_full)]); ylim([-60, 20]);
+end
 % % subplots for each pfb channel
 % for m = 1:M
 %   figure(2);
@@ -87,16 +84,15 @@ zoom_pfb_spectrum = pfb_output_spectrum(:, hsov:end-hsov-1);
 %   xlim([min(f_corrected), max(f_corrected)]);
 %   ylim([-60, 20]);
 % end
-
+%%
 % plot unpruned spectrum
 figure(10);
 plot(faxis_fine_full, 20*log10(abs(pfb_output_spectrum_full))); grid on;
-title('Unpruned Zoom Spectrum'); xlabel('Frequency (Hz)'); ylabels('Power (arb. units dB)');
+title('Unpruned Zoom Spectrum'); xlabel('Frequency (Hz)'); ylabel('Power (arb. units dB)');
 xlim([min(faxis_fine_full), max(faxis_fine_full)]);
 
 % plot pruned spectrum
 figure(11);
-zoom_pfb_stitch = reshape(zoom_pfb_spectrum.', [1, (Nfft_fine-2*hsov)*M]);
 plot(faxis_fine, 20*log10(abs(zoom_pfb_stitch))); grid on;
-title('Pruned Zoom Spectrum'); xlabel('Frequency (Hz)'); ylabels('Power (arb. units dB)');
+title('Pruned Zoom Spectrum'); xlabel('Frequency (Hz)'); ylabel('Power (arb. units dB)');
 xlim([min(faxis_fine), max(faxis_fine)]);
