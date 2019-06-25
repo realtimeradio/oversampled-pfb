@@ -38,47 +38,23 @@ total_channels = Nfft_coarse*Nfft_fine;     % total number of channels in fine '
 hsov = (M-D)*Nfft_fine/(2*M);               % half-sided overlap; Number of overlapped channels for two adjacent channels;
                                             % Also thought of as the number
                                             % of discarded channels.
-hs_count = D*Nfft_fine/(2*M);                % half-sided channel count; Number of channels preserved from bin center extending
+hs_count = D*Nfft_fine/(2*M);               % half-sided channel count; Number of channels preserved from bin center extending
                                             % to the edge of one channel
 
-channel_count = hs_count*2;                 % number of fine channels remaning after discarding channels
-                                            % note:
-                                      % channel_count = Nfft_fine - 2*hsov
+fine_channel_count = hs_count*2;       % number of fine channels remaning after discarding channels
+                                       % note:
+                                       % channel_count = Nfft_fine - 2*hsov
 
-fbins_fine = D*Nfft_fine;               % total number of channels in the fine 'zoom' spectrum after discarding channels
-                                        % note:
-                                        % fbins_fine = hscount * (2*M)
-                                        % and
-                                        % fbins_fine = (Nfft_fine-2*hsov)*M
-                                        % all of these identities
+channels_fbins_fine = D*Nfft_fine;     % total number of channels in the fine 'zoom' spectrum after discarding channels
+                                       % note:
+                                       % fbins_fine = hscount * (2*M)
+                                       % and
+                                       % fbins_fine = (Nfft_fine-2*hsov)*M
+                                       % all of these identities
  
-fs_decimated = fs/D; % decimated sample rate of each output time-series of the pfb (Hz)
-Nfft_fine = 512;
-fbins_coarse = 0:Nfft_fine-1;
 
-df = fs_decimated/Nfft_fine; % bin width (Hz)
-faxis_coarse = fbins_coarse*df;
-
-hsov = fs/2*(1/D-1/M)/df; % half-sided overlap - bins to throw away on the right and left channels boundries
-channel_bins = Nfft_fine-hsov*2; % channels reamining after discarding overlapped regions.
-channels_os_pfb = M*channel_bins; % totall channels remaining in os pfb spectrum
-
-full_pfb_spectrum = fftshift(fft(os_pfb_output(:, offset:Nfft_fine+offset), Nfft_fine, 2), 2)/Nfft_fine; % apply the fft across the matrix
-pfb_spectrum = full_pfb_spectrum(:, hsov:end-hsov-1);
-
-% % subplots for each pfb channel
-% for m = 1:M
-%   figure(2);
-%   subplot(4,8,m);
-%   fbins_corrected = ((m-1)-1/2)*(Nfft-2*hsov):((m-1)+1/2)*(Nfft-2*hsov)-1;
-%   f_corrected = fbins_corrected*fs_decimated/Nfft;
-%   plot(f_corrected, 20*log10(abs(pfb_spectrum(m,:)))); grid on;
-%   xlim([min(f_corrected), max(f_corrected)]);
-%   ylim([-60, 20]);
-% end
-
-figure(11);
-os_pfb_stitch = reshape(pfb_spectrum.', [1, (Nfft_fine-2*hsov)*M]);
+fbins_fine_full = 0:total_channels-1;              % unpruned spectrum bins
+faxis_fine_full = fbins_fine_full*fs_os/Nfft_fine; % unpruned frequency axis
 
 % I want to figure out why waht was wrong here with the commented out
 % fbins_os. Becuase I understand that I am starting at the left channel
@@ -91,9 +67,36 @@ os_pfb_stitch = reshape(pfb_spectrum.', [1, (Nfft_fine-2*hsov)*M]);
 % than zero where I start with negative frequencies. This would seem to be
 % that the difference is that I start with zero being a bin center and he
 % starts with zero being a far left channel edge.
+
 fshift = -(Nfft_fine/2-hsov+1);
-fbins_os = [0:channels_os_pfb-1] + fshift;
-% fbins_os = (-Nfft/2+hsov-1):((M*Nfft-Nfft/2-1)-2*M*(hsov-1)-1);
-f_os = fbins_os*fs_decimated/Nfft_fine;
-plot(f_os, 20*log10(abs(os_pfb_stitch))); grid on;
-xlim([min(f_os), max(f_os)]);
+fbins_fine = 0:channels_fbins_fine-1 + fshift;  % pruned spectrum bins
+faxis_fine = fbins_fine*fs_os/Nfft_fine;        % pruned frequency axis
+
+pfb_output_spectrum = fftshift(fft(os_pfb_output(:, offset:Nfft_fine+offset), Nfft_fine, 2), 2)/Nfft_fine; % apply the fft across the matrix
+pfb_output_spectrum_full = reshape(pfb_output_spectrum.', [1, total_channels]);
+
+zoom_pfb_spectrum = pfb_output_spectrum(:, hsov:end-hsov-1);
+
+% % subplots for each pfb channel
+% for m = 1:M
+%   figure(2);
+%   subplot(4,8,m);
+%   fbins_corrected = ((m-1)-1/2)*(Nfft-2*hsov):((m-1)+1/2)*(Nfft-2*hsov)-1;
+%   f_corrected = fbins_corrected*fs_decimated/Nfft;
+%   plot(f_corrected, 20*log10(abs(pfb_spectrum(m,:)))); grid on;
+%   xlim([min(f_corrected), max(f_corrected)]);
+%   ylim([-60, 20]);
+% end
+
+% plot unpruned spectrum
+figure(10);
+plot(faxis_fine_full, 20*log10(abs(pfb_output_spectrum_full))); grid on;
+title('Unpruned Zoom Spectrum'); xlabel('Frequency (Hz)'); ylabels('Power (arb. units dB)');
+xlim([min(faxis_fine_full), max(faxis_fine_full)]);
+
+% plot pruned spectrum
+figure(11);
+zoom_pfb_stitch = reshape(zoom_pfb_spectrum.', [1, (Nfft_fine-2*hsov)*M]);
+plot(faxis_fine, 20*log10(abs(zoom_pfb_stitch))); grid on;
+title('Pruned Zoom Spectrum'); xlabel('Frequency (Hz)'); ylabels('Power (arb. units dB)');
+xlim([min(faxis_fine), max(faxis_fine)]);
