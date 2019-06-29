@@ -11,7 +11,8 @@ void polyphase_filter(cx_datain_t in[D], cx_dataout_t filter_out[M], os_pfb_conf
   };
 
   // shift states that have been pre-determined. Need to figure out how to auto-generate
-  static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
+  static int shift_states[SHIFT_STATES] = {0, 8, 16, 24};
+  static int state_idx = 0;
 
   ifft_config->setDir(0); //inverse transform
 
@@ -28,38 +29,41 @@ void polyphase_filter(cx_datain_t in[D], cx_dataout_t filter_out[M], os_pfb_conf
       int idx = p*M+m;
 
       if (idx <= D-1) {
+        // TODO: synthesis still complains about non-sequential accessing even though these
+        // are being accessed in reverse order. Will this be a problem?
         filter_state[idx] = in[idx];
       } else {
         filter_state[idx] = filter_state[idx-D];
       }
       temp[m] = temp[m] + h[idx]*filter_state[idx];
-//      filter_out[m] = filter_out[m] + h[idx]*filter_state[idx];
     }
   }
 
   //apply phase correction
-  int shift = shift_states[0];
-  int oidx;
+  int shift = shift_states[state_idx];
+  int tmpidx;
   for (int i=0; i<M; ++i) {
-    oidx = (i+shift) % M;
-    filter_out[oidx] = temp[i];
+    tmpidx = (M-shift+i) % M;
+    filter_out[i] = temp[tmpidx];
   }
-
-  // move shift array up by one and copy end to beginning
-  int tmp = shift_states[SHIFT_STATES-1];
-  for (int i=SHIFT_STATES-1; i > 0; --i) {
-    shift_states[i] = shift_states[i-1];
-  }
-  shift_states[0] = tmp;
-
-//  for (int m=0; m < M; ++m) {
-//    filter_out[m] = temp[m];
-//  }
+  state_idx = (state_idx+1) % SHIFT_STATES;
 
   return;
 }
 
 void apply_phase_correction (cx_dataout_t filter_out[M], cx_dataout_t ifft_buffer[M]) {
+
+  // TODO: Debuging the actual implementation on the hardware showed that the step to apply the
+  // phase correction was not being synthesized correctly (wasn't even happening at all). The
+  // implementation in the polyphase_filter method was therefore changed to address that but
+  // those changes are not reflected below.
+  // Specifically the shift states no longer rotate and the accessing of the memory for filter_out
+  // is done sequentially instead of sequential on temp. Note this is the similar approach and
+  // improvement as when the loop indexes m and p were swapped in the FIR loop to make the
+  // accesses sequential.
+  // The action here is to continue to figure out if these functions can be pipelined in a correct
+  // dataflow environment (overcoming the previous issue of having the three functions violated
+  // dataflow requirements) and then matching the implementations and re-evaluate efficiency.
 
   // shift states that have been pre-determined. Need to figure out how to auto-generate
   static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
