@@ -4,6 +4,7 @@
 sandbox/
 vivado/
 os_pfb_prj/
+exports/
 
 # matlab
 *.m~
@@ -12,3 +13,8 @@ os_pfb_prj/
 *.bin
 *.out
 *.dat
+
+# vivado logs
+*.log
+*.jou
+*.str
