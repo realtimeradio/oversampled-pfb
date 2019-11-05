@@ -4,7 +4,6 @@
 #include "os_pfb.h"
 
 void polyphase_filter(cx_datain_t in[D], cx_dataout_t filter_out[M], os_pfb_config_t* ifft_config) {
-
   // filter taps
   const coeff_t h[L] = {
     #include "coeff.dat"
@@ -18,14 +17,11 @@ void polyphase_filter(cx_datain_t in[D], cx_dataout_t filter_out[M], os_pfb_conf
 
   static cx_dataout_t filter_state[L];
   cx_dataout_t temp[M]; // need a temp variable to not violate dataflow requirements in synthesis
-  // Note: in the fir loop...
-  // interchange p and m iterators for m to be fastest moving for sequential memory access. This can be seen from
-  // the 'idx' variable because m is the fastest moving element and the fact p is multiplied by M shows that p controls
-  // row jumps (if it were a two dimensional data structure--which it is in the model/block diagram).
 
   // shift/capture samples and polyphase fir filter
-  for (int p = P-1; p >= 0 ; --p) {
-    for (int m = M-1; m >= 0; --m) {
+  filter_taps: for (int p = P-1; p >= 0 ; --p) {
+    #pragma HLS pipeline II=1 rewind
+    filter_brances: for (int m = M-1; m >= 0; --m) {
       int idx = p*M+m;
 
       if (idx <= D-1) {
@@ -39,49 +35,28 @@ void polyphase_filter(cx_datain_t in[D], cx_dataout_t filter_out[M], os_pfb_conf
     }
   }
 
-  //apply phase correction
-  int shift = shift_states[state_idx];
-  int tmpidx;
-  for (int i=0; i<M; ++i) {
-    tmpidx = (M-shift+i) % M;
-    filter_out[i] = temp[tmpidx];
-  }
-  state_idx = (state_idx+1) % SHIFT_STATES;
+  polyphase_out: for (int i=0; i<M; i++)
+    filter_out[i] = temp[i];
 
   return;
 }
 
 void apply_phase_correction (cx_dataout_t filter_out[M], cx_dataout_t ifft_buffer[M]) {
-
-  // TODO: Debuging the actual implementation on the hardware showed that the step to apply the
-  // phase correction was not being synthesized correctly (wasn't even happening at all). The
-  // implementation in the polyphase_filter method was therefore changed to address that but
-  // those changes are not reflected below.
-  // Specifically the shift states no longer rotate and the accessing of the memory for filter_out
-  // is done sequentially instead of sequential on temp. Note this is the similar approach and
-  // improvement as when the loop indexes m and p were swapped in the FIR loop to make the
-  // accesses sequential.
-  // The action here is to continue to figure out if these functions can be pipelined in a correct
-  // dataflow environment (overcoming the previous issue of having the three functions violated
-  // dataflow requirements) and then matching the implementations and re-evaluate efficiency.
+  #pragma HLS interface ap_fifo port=filter_out
+  #pragma HLS interface ap_fifo port=ifft_buffer
 
   // shift states that have been pre-determined. Need to figure out how to auto-generate
-  static int shift_states[SHIFT_STATES] = {0, 24, 16, 8};
+  static int shift_states[SHIFT_STATES] = {0, 8, 16, 24};
+  static int state_idx = 0;
 
   //apply phase correction
-  int shift = shift_states[0];
-  int oidx;
-  for (int i=0; i<M; ++i) {
-    oidx = (i+shift) % M;
-    ifft_buffer[oidx] = filter_out[i];
+  int shift = shift_states[state_idx];
+  int tmpidx;
+  rotate: for (int i=0; i<M; ++i) {
+    tmpidx = (M-shift+i) % M;
+    ifft_buffer[i] = filter_out[tmpidx];
   }
-
-  // move shift array up by one and copy end to beginning
-  int tmp = shift_states[SHIFT_STATES-1];
-  for (int i=SHIFT_STATES-1; i > 0; --i) {
-    shift_states[i] = shift_states[i-1];
-  }
-  shift_states[0] = tmp;
+  state_idx = (state_idx+1) % SHIFT_STATES;
 
   return;
 }
@@ -105,20 +80,23 @@ void os_pfb(cx_datain_t in[D], os_pfb_axis_t out[M], bool* ovflow)
 #pragma HLS interface ap_ctrl_none port=return
 #pragma HLS data_pack variable=in
 #pragma HLS data_pack variable=out
-#pragma HLS dataflow
 
-  os_pfb_config_t ifft_config;
-  os_pfb_status_t ifft_status;
-  cx_dataout_t filter_out[M];
-//  cx_dataout_t ifft_buffer[M];
-  cx_dataout_t ifft_out[M];
+  dataflow_region: {
+    #pragma HLS dataflow
+    cx_dataout_t filter_out[M];
+    cx_dataout_t ifft_buffer[M];
+    cx_dataout_t ifft_out[M];
 
-  polyphase_filter(in, filter_out, &ifft_config);
-//  apply_phase_correction(filter_out, ifft_buffer);
-//  hls::fft<os_pfb_config>(ifft_buffer, ifft_out, &ifft_status, &ifft_config);
-  hls::fft<os_pfb_config>(filter_out, ifft_out, &ifft_status, &ifft_config);
-  be(ifft_out, out, &ifft_status, ovflow);
+    os_pfb_config_t ifft_config;
+    os_pfb_status_t ifft_status;
+    #pragma HLS data_pack variable=ifft_config
 
+    polyphase_filter(in, filter_out, &ifft_config);
+    apply_phase_correction(filter_out, ifft_buffer);
+    hls::fft<os_pfb_config>(ifft_buffer, ifft_out, &ifft_status, &ifft_config);
+  //  hls::fft<os_pfb_config>(filter_out, ifft_out, &ifft_status, &ifft_config);
+    be(ifft_out, out, &ifft_status, ovflow);
+  }
   return;
 }
 
