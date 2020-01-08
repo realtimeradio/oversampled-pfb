@@ -1,0 +1,28 @@
+Q: single/dual-port definitions
+Am I misunderstanding what it means to be sp, dp and true dp? I thougt that true
+dp would give me two reads and two writes that I could enable independent of
+eachother... I must be wrong? Because I don't see a inference template that
+provides that... If this is true. What does this mean for my design...?
+
+Q: memory collisions
+I understand what a memory colission is and that they are bad but I am having a
+hard time knowing when that will for sure be an issue. For example, I know there
+is a WAR mode for the BRAM. This indicates to me that the BRAM will read the
+value first and then write. This would then allow that the read address pointer
+and the write address pointer can point at the same spot in the same cycle.
+However I do not know or understand the limitations on ports. For example, if my
+design synthesizes to using two ports but the write is on one port and the read
+is on the other will this actually then result on a collision?
+
+Q: Control architecture
+Another question is with how to handle the control structure. Should there be
+internal statemachines that are creating the control or should it be dependent
+on the upstream AXIS interface? We came up with arguments for both. Since the
+faster sample rate is a rational multiple of the lower clock rate (data clock)
+then there is still this synchronous nature for how everything works. However,
+only relying on the AXIS on the input provides reliability issues. We need the
+AXI stream interfaces anyway and so for now I am thinking I will implement both
+and use them as a reliability measure and just see what drops out of the
+simulations as time goes on.
+
+
