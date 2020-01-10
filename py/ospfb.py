@@ -8,13 +8,14 @@ def minTuple(t):
     return m
 
 class OSPFB:
-  def __init__(self, M, D, P, initval):
+  def __init__(self, M, D, P, initval, followHistory=False):
     self.M = M
     self.D = D
     self.P = P
     self.L = P*M
     self.osratio = float(M)/float(D)
     self.iterval = initval
+    self.followHistory = followHistory
 
     self.modtimer = 0
     self.cycle = 0
@@ -24,8 +25,8 @@ class OSPFB:
     self.taps = ['h{}'.format(i) for i in range(0, self.L)]
 
     # initialize PEs elements
-    self.PEs = [pe(idx=1, M=M, D=D, taps=self.taps[M-1::-1])]
-    self.PEs += [pe(idx=i, M=M, D=D, taps=self.taps[i*M-1:(i-1)*M-1:-1]) for i in range(2, (P+1))]
+    self.PEs = [pe(idx=1, M=M, D=D, taps=self.taps[M-1::-1], keepHistory=self.followHistory)]
+    self.PEs += [pe(idx=i, M=M, D=D, taps=self.taps[i*M-1:(i-1)*M-1:-1], keepHistory = self.followHistory) for i in range(2, (P+1))]
 
   def enable(self):
     self.run = (not self.run)
@@ -67,13 +68,14 @@ class OSPFB:
   def getHistory(self, dumpf=False):
     strhist = ""
     # only need to increase the databuf and delaybuf large cycle counts
-    dbfmt = "{{{:s}}}".format(":<3s")
-    delayfmt = "{{{:s}}}".format(":<3s")
+    dbfmt = "{{{:s}}}".format(":<5s") # field width of 5 for when need negative inputs 3 when positive
+    validfmt = "{{{:s}}}".format(":<2s")
+    delayfmt = "{{{:s}}}".format(":<5s") # field width of 5 for when need negative inputs 3 when positive
     sumfmt = "{{:<{:d}s}}".format((self.P-1)*9+6)
     for i in range(self.P-1, -1, -1):
       pe = self.PEs[i]
       #sumfmt = "{{:>{:d}s}}".format(i*9+6) #i for the pe, 9 for the 6 pe char and 3 for the ' + ' connecting sum values beetween pe
-      strhist += pe.formatHistory(dbfmt, sumfmt, delayfmt)
+      strhist += pe.formatHistory(dbfmt, sumfmt, delayfmt, validfmt)
       strhist += "\n\n"
 
     if dumpf:
@@ -99,11 +101,12 @@ class OSPFB:
 
 
 class pe:
-  def __init__(self, idx, M, D, taps):
+  def __init__(self, idx, M, D, taps, keepHistory=False):
     self.idx = idx 
     self.M = M
     self.D = D
     self.taps = None
+    self.keepHistory = keepHistory
     self.sumbuf = ringbuffer(length=M)
     self.delaybuf = ringbuffer(length=(M-D))
     self.databuf = ringbuffer(length=2*M)
@@ -131,6 +134,40 @@ class pe:
     sout = "-"
     dout = "-"
 
+######## TESTING NEW CONTROL/DATAFLOW #########
+# Re-writing the control this way yields the same
+# result as previous control flow
+#
+#    dbuf = self.delaybuf.buf[self.delaybuf.head] # has to be here since we need the value before it is overwritten
+#    if vin=="True":
+#      d = din
+#      if self.delaybuf.full:
+#        self.delaybuf.war(din)
+#      else:
+#        self.delaybuf.write(din)
+#    else:
+#      d = self.delaybuf.war(self.delaybuf.buf[self.delaybuf.head])
+#
+#    if self.databuf.full:
+#      dout = self.databuf.war(dbuf)
+#    else:
+#      self.databuf.write(dbuf)
+#
+#    # write to valid buffer
+#    if self.validbuf.full:
+#      vout = self.validbuf.war(vin)
+#    else:
+#      self.validbuf.write(vin)
+#
+#    # compute sum
+#    h = self.taps.war(self.taps.buf[self.taps.head])
+#    s = self.MAC(sin, d, h)
+#    if self.sumbuf.full:
+#      sout = self.sumbuf.war(s)
+#    else:
+#      self.sumbuf.write(s)
+#
+############ PREV CONTROL/DATAFLOW #############
     # deterimine if data to use is from in our loopback delay buffer
     if self.delaybuf.full and (vin=="True"):
       d = self.delaybuf.war(din)
@@ -162,7 +199,24 @@ class pe:
       sout = self.sumbuf.war(s)
     else:
       self.sumbuf.write(s)
+############ PREV CONTROL/DATAFLOW #############
+    if self.keepHistory:
+      self.updateHistory()    
 
+    return (dout, sout, vout)
+
+
+  def MAC(self, sin, din, coeff):
+    if sin == "0":
+      s = ('{}{}').format(coeff, din)
+    else:
+      s = ('{} + ' + '{}{}').format(sin, coeff, din)
+
+    return s
+    #return sin + din*sout
+
+
+  def updateHistory(self):
     # create history looking like my hand drawings
     # really python-ic code here but I was too lazy to break each line out into
     # multiple variables that may have been more descriptive. However, what is
@@ -206,28 +260,34 @@ class pe:
       self.validhist = np.reshape(np.roll(self.validbuf.buf,
                                       -self.validbuf.head),
                               (2*self.M,1))
+                              #(2*self.M+(self.M-self.D),1))
     else:
       self.validhist = np.concatenate((self.validhist,
                       np.reshape(np.roll(self.validbuf.buf,
                                         -self.validbuf.head),
                                         (2*self.M,1))),
+                                        #(2*self.M+(self.M-self.D),1))),
                                  axis=1)
-    return (dout, sout, vout)
 
-  def MAC(self, sin, din, coeff):
-    if sin == "0":
-      s = ('{}{}').format(coeff, din)
-    else:
-      s = ('{} + ' + '{}{}').format(sin, coeff, din)
 
-    return s
-    #return sin + din*sout
+  def formatHistory(self, dbfmt, sumfmt, delayfmt, validfmt):
 
-  def formatHistory(self, dbfmt, sumfmt, delayfmt):
+    if self.dbhist is None:
+      print("No history has been accumulated")
+      return ""
+
     strhist = ""
+    # outer loop over all databuffer branches (2*M)
     for i in range(0, 2*self.M):
       for j in range(0, self.cycle):
         strhist += dbfmt.format(self.dbhist[i,j]) #" {:<3s}"
+
+      # white space between databuf and valid buffer
+      strhist += "{:<4s}".format(" ")
+
+      # valid buffer history
+      for j in range(0, self.cycle):
+        strhist += validfmt.format(self.validhist[i,j][0])
       if i < self.M:
         strhist += "{:<4s}".format(" ")
         for j in range(0, self.cycle):
@@ -236,8 +296,16 @@ class pe:
     strhist += "\n"
 
     for i in range(0, self.M-self.D):
+      # delay buffer
       for j in range(0, self.cycle):
         strhist += delayfmt.format(self.delayhist[i,j]) #" {:<s}"
+
+      # white space between delay buffer and valid buffer
+      strhist += "{:<4s}".format(" ")
+
+      ## valid buffer when there is a valid buffer matching the delay line
+      #for j in range(0, self.cycle):
+      #  strhist += validfmt.format(self.validhist[8-i,j][0]) # no offset to get aligned with the delay buffer
 
     return strhist
 
@@ -361,12 +429,26 @@ class sink:
   def xmap(self, p, m):
     return self.n*self.D-p*self.M-m
 
+def latencyCalc(P, M, D):
+  res = (0,M-1)
+  #res = (0,3)
+  delay = 0
+  i = 0
+  while i < P:
+  #for i in range(0, P):
+    res = np.divmod(res[1]+D, M)
+    if not res[0]:
+      delay = delay + (M-D)
+    else:
+      i+=1
+
+  return delay
 
 if __name__ == "__main__":
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
   rb = ringbuffer(8)
 
-  M = 4; D = 3; P = 4;
+  M = 2048; D = 1536; P = 8;
   # manual tap and pe instantiation
   taps = ['h{}'.format(i) for i in range(0,M*P)]
   pe1 = pe(idx=1, M=M, D=D, taps=taps[(M-1)::-1])
@@ -377,13 +459,15 @@ if __name__ == "__main__":
   # but changes with M and **it is important to change** ( I think 1 is always
   # safe though because it is the one after n=0
   initval = 1
-  ospfb = OSPFB(M=M, D=D, P=P, initval=initval)
+  ospfb = OSPFB(M=M, D=D, P=P, initval=initval, followHistory=False)
   #sys.exit()
   # this latency comp works for some but not all cases so I still don't have it
   # right. But it works for the cases we care about... like ALPACA specs.
-  latencyComp = (M-D)*int((P-1)/(D/np.gcd(M,D)))
+  #latencyComp = (M-D)*int((P-1)/(D/np.gcd(M,D)))
 
-  cycleValid = (P-1)*(3*M-D) + M + 1 #+ latencyComp
+  latencyComp = latencyCalc(P, M, D)
+
+  cycleValid = (P-1)*(3*M-D) + M + 1 + latencyComp
 
   s = sink(M=M, D=D, P=P, init=initval)
   #s = sink(t=startbranch, M=M, D=D, P=P, init=initval)
