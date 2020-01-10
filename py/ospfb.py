@@ -502,6 +502,10 @@ if __name__ == "__main__":
   # still need to know when the outputs are the ones that I care about and can
   # rotate in the phase correction buffer....
 
+  # but does it really make sense to ever talk about an initial value other than
+  # zero?
+
+
   # w/o changing pointers in ospfb only valid initvals are -11, -8, -5, -2, etc.
   # but changes with M and **it is important to change** ( I think 1 is always
   # safe though because it is the one after n=0
