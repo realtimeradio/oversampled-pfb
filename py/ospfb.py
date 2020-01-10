@@ -7,6 +7,7 @@ def minTuple(t):
       m = t
     return m
 
+
 class OSPFB:
   def __init__(self, M, D, P, initval, followHistory=False):
     self.M = M
@@ -71,10 +72,10 @@ class OSPFB:
     dbfmt = "{{{:s}}}".format(":<5s") # field width of 5 for when need negative inputs 3 when positive
     validfmt = "{{{:s}}}".format(":<2s")
     delayfmt = "{{{:s}}}".format(":<5s") # field width of 5 for when need negative inputs 3 when positive
-    sumfmt = "{{:<{:d}s}}".format((self.P-1)*9+6)
+    sumfmt = "{{:<{:d}s}}".format((self.P-1)*9+6) # 9 for the 6 pe char and 3 for the ' + ' connecting sum values beetween pe
     for i in range(self.P-1, -1, -1):
       pe = self.PEs[i]
-      #sumfmt = "{{:>{:d}s}}".format(i*9+6) #i for the pe, 9 for the 6 pe char and 3 for the ' + ' connecting sum values beetween pe
+      #sumfmt = "{{:>{:d}s}}".format(i*9+6) #iter over pe if different lengths needed
       strhist += pe.formatHistory(dbfmt, sumfmt, delayfmt, validfmt)
       strhist += "\n\n"
 
@@ -84,7 +85,6 @@ class OSPFB:
       fp.close()
 
     return strhist
-
 
   def print(self):
     s = ""
@@ -107,15 +107,15 @@ class pe:
     self.D = D
     self.taps = None
     self.keepHistory = keepHistory
-    self.sumbuf = ringbuffer(length=M)
+    self.sumbuf   = ringbuffer(length=M)
     self.delaybuf = ringbuffer(length=(M-D))
-    self.databuf = ringbuffer(length=2*M)
+    self.databuf  = ringbuffer(length=2*M)
     self.validbuf = ringbuffer(length=2*M, load=["False" for i in range(0,2*M)])
 
     self.cycle = 0
 
-    self.sumhist = None
-    self.dbhist = None
+    self.sumhist   = None
+    self.dbhist    = None
     self.delayhist = None
     self.validhist = None
 
@@ -174,7 +174,6 @@ class pe:
     elif vin=="True":
       self.delaybuf.write(din)
     else:
-      #print("PE {}: Pulling from delay line".format(self.idx))
       din = self.delaybuf.buf[self.delaybuf.head]
       d = din
       self.delaybuf.war(self.delaybuf.buf[self.delaybuf.head])
@@ -193,18 +192,18 @@ class pe:
 
     # compute sum
     h = self.taps.war(self.taps.buf[self.taps.head])
-    #print("Current tap: {}".format(h))
     s = self.MAC(sin, din, h)
     if self.sumbuf.full:
       sout = self.sumbuf.war(s)
     else:
       self.sumbuf.write(s)
 ############ PREV CONTROL/DATAFLOW #############
+
+    # update symbolic timing history
     if self.keepHistory:
       self.updateHistory()    
 
     return (dout, sout, vout)
-
 
   def MAC(self, sin, din, coeff):
     if sin == "0":
@@ -213,20 +212,20 @@ class pe:
       s = ('{} + ' + '{}{}').format(sin, coeff, din)
 
     return s
-    #return sin + din*sout
-
 
   def updateHistory(self):
-    # create history looking like my hand drawings
-    # really python-ic code here but I was too lazy to break each line out into
-    # multiple variables that may have been more descriptive. However, what is
-    # going on here is the *hist variables are matrices of the snapshot outputs
-    # of each buffer. The roll operation by head moves each buffer as if the the
-    # very next thing was first in the array. Then reshape and concatenate
-    # formats each buffer into a column vector to concatenate and grow the
-    # matrix.
+    """
+    create history looking like my hand drawn systolic timing diagrams.
+
+    roll    - buffer by -head so newest is first element oldest is last.
+    reshape - to be a column vector
+    concat  - column vector to growing history
+    """
+    
     if self.sumhist is None:
-      self.sumhist = np.reshape(np.roll(self.sumbuf.buf,-self.sumbuf.head), (self.M,1))
+      self.sumhist = np.reshape(np.roll(self.sumbuf.buf,
+                                       -self.sumbuf.head),
+                                       (self.M,1))
     else:
       self.sumhist = np.concatenate((self.sumhist,
                       np.reshape(np.roll(self.sumbuf.buf,
@@ -260,15 +259,12 @@ class pe:
       self.validhist = np.reshape(np.roll(self.validbuf.buf,
                                       -self.validbuf.head),
                               (2*self.M,1))
-                              #(2*self.M+(self.M-self.D),1))
     else:
       self.validhist = np.concatenate((self.validhist,
                       np.reshape(np.roll(self.validbuf.buf,
                                         -self.validbuf.head),
                                         (2*self.M,1))),
-                                        #(2*self.M+(self.M-self.D),1))),
                                  axis=1)
-
 
   def formatHistory(self, dbfmt, sumfmt, delayfmt, validfmt):
 
@@ -277,10 +273,11 @@ class pe:
       return ""
 
     strhist = ""
-    # outer loop over all databuffer branches (2*M)
+
+    # outer loop over all databuffer delays (2*M)
     for i in range(0, 2*self.M):
       for j in range(0, self.cycle):
-        strhist += dbfmt.format(self.dbhist[i,j]) #" {:<3s}"
+        strhist += dbfmt.format(self.dbhist[i,j])
 
       # white space between databuf and valid buffer
       strhist += "{:<4s}".format(" ")
@@ -291,21 +288,17 @@ class pe:
       if i < self.M:
         strhist += "{:<4s}".format(" ")
         for j in range(0, self.cycle):
-          strhist += sumfmt.format(self.sumhist[i,j]) #"{:>12s}"
+          strhist += sumfmt.format(self.sumhist[i,j])
       strhist += "\n"
     strhist += "\n"
 
+    # loopback delay buffer
     for i in range(0, self.M-self.D):
-      # delay buffer
       for j in range(0, self.cycle):
-        strhist += delayfmt.format(self.delayhist[i,j]) #" {:<s}"
+        strhist += delayfmt.format(self.delayhist[i,j])
 
       # white space between delay buffer and valid buffer
       strhist += "{:<4s}".format(" ")
-
-      ## valid buffer when there is a valid buffer matching the delay line
-      #for j in range(0, self.cycle):
-      #  strhist += validfmt.format(self.validhist[8-i,j][0]) # no offset to get aligned with the delay buffer
 
     return strhist
 
@@ -321,8 +314,10 @@ class pe:
                           self.validbuf, self.taps)
     return s
 
+
 class ringbuffer:
-  dt = np.dtype((np.unicode_, 128)) # max is a 128 long string per element
+  # max representable is a 128 long string per buffer element
+  dt = np.dtype((np.unicode_, 128)) 
 
   def __init__(self, length=16, load=None):
     self.head = 0
@@ -353,10 +348,12 @@ class ringbuffer:
         self.empty = True
     return res
 
-  # Insert a value into the ring buffer
-  #   Error and do nothing when tail = head
-  #   Return a tuple of the addr and value written
   def write(self, din):
+    """
+      Insert a value into the ring buffer
+      Error and do nothing when tail = head
+      Return a tuple of the addr and value written
+    """
     if (self.full):
       print("Error: overwriting data... not writing")
       return
@@ -373,8 +370,10 @@ class ringbuffer:
 
     return res
 
-  # write after read
   def war(self, din):
+    """
+      Write after read
+    """
     res = self.read()
     wr = self.write(din)
     return res
@@ -398,6 +397,8 @@ class sink:
 
     self.cycle = 0
 
+    # determine the decimated time sample (n*D) and branch index that the initial
+    # value (init) will first appear in the last term of the polyphase sum
     self.l = []
     self.num = lambda m: (self.init+(self.P-1)*self.M+m)
     for m in range(0,self.M):
@@ -429,13 +430,37 @@ class sink:
   def xmap(self, p, m):
     return self.n*self.D-p*self.M-m
 
-def latencyCalc(P, M, D):
+
+def latencyComp(P, M, D):
+  """
+  Calculate the added latency due to the loopback and modulo operation of the
+  resampling. This is the extra latency that the is added to the total latency
+  of the PEs.
+
+  It is also noted that is is added in the case when we want to know when the
+  first complete sum is finished (i.e., the first input sample appears in the
+  last term of the polyphase sum).
+
+  The way this works is by counting times the modulo operator is not triggered
+  and adding the difference (M-D). Each time the modulo operator is triggered
+  iterator counts up until it reaches P-1 (the number of PEs). What this does is
+  it follows the pattern that is seen in the derivation of the resampling
+  polyphase fir for when input samples should be delivered to the filter and
+  not. In this case the delay is incremented when we don't deliver a sample and
+  the PE count is increased when we do.
+
+  Notice that the inital value for res = (0, M-1) this is required to start
+  counting the pattern correctly. I am still trying to figure this out but my
+  best explanation for now is that it is in line with the fact that we would
+  normally (under critically sampled conditions) deliver samples starting at
+  port M-1 which is what the output of the mod() operator tells us to do (it
+  tells us what port we should be accessing).
+  """
+
   res = (0,M-1)
-  #res = (0,3)
   delay = 0
   i = 0
   while i < P:
-  #for i in range(0, P):
     res = np.divmod(res[1]+D, M)
     if not res[0]:
       delay = delay + (M-D)
@@ -446,39 +471,61 @@ def latencyCalc(P, M, D):
 
 if __name__ == "__main__":
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
+
+  # example ring buffer initialization
   rb = ringbuffer(8)
 
-  M = 2048; D = 1536; P = 8;
-  # manual tap and pe instantiation
+  M = 8; D = 5; P = 4;
+
+  # manual manual tap and pe instantiation
   taps = ['h{}'.format(i) for i in range(0,M*P)]
   pe1 = pe(idx=1, M=M, D=D, taps=taps[(M-1)::-1])
   pe2 = pe(idx=2, M=M, D=D, taps=taps[(2*M-1):(M-1):-1])
 
-  # OSPFB instantiation
+  # This is where I should start tomorrow. But I am not sure I remember what I
+  # meant by pointers. If I am remembering correctly I am refering to the
+  # starting coefficient pointer. In the original DG/SFG the derivation of the
+  # systolic architecture pointed to interleaving that resulted in starting at
+  # the port M (in the critically sampled case) and so in the oversampled case I
+  # then started at port M-D which is where we would start the coefficients
+  # from. Which is why in the original hand drawn diagrams for M=4, D=3, P=3 the
+  # filter coefficients for the first PE start h2, h1, h0, h3
+
+  # but now I am trying to determine how to know when the output is valid
+  # because I am trying to see patterns but then some cases seems to violate any
+  # hurestics or patters (like M=8, D=5, P=4) there are some '-' that show up
+  # after the cycleValid comparison.
+
+  # I am also reconsidering the whole initvalue and determine the branch and
+  # time the sample is valid and the whole rotated pointers because maybe we
+  # want to just always start with sample x0 h0. This stems from the fact I
+  # still need to know when the outputs are the ones that I care about and can
+  # rotate in the phase correction buffer....
+
   # w/o changing pointers in ospfb only valid initvals are -11, -8, -5, -2, etc.
   # but changes with M and **it is important to change** ( I think 1 is always
   # safe though because it is the one after n=0
   initval = 1
+
   ospfb = OSPFB(M=M, D=D, P=P, initval=initval, followHistory=False)
-  #sys.exit()
-  # this latency comp works for some but not all cases so I still don't have it
-  # right. But it works for the cases we care about... like ALPACA specs.
-  #latencyComp = (M-D)*int((P-1)/(D/np.gcd(M,D)))
 
-  latencyComp = latencyCalc(P, M, D)
+  # A poorly described explanation of how this is determined (and kind of why)
+  # is in the comments of the latencyComp function.
+  addedLatency = latencyComp(P, M, D)
 
-  cycleValid = (P-1)*(3*M-D) + M + 1 + latencyComp
+  # Each PE contributes 2M+(M-D) = 3M-D delay but on the last PE we only way M
+  # before the output is delivered. The offset of one moves us off cycle 0
+  # and see latencyComp for the calculation of the added latency.
+  # in my hand written simulation notes for the OS PFB with M=4, D=3, and P=2 I
+  # have the first valid output being produced at cycle 10 the difference is I
+  # wasn't taking into account the additional M latency that would be present in
+  # a generic PE (coding a PE that didn't have that delay).
+
+  # This is the cycle valid for when the initial value (initval) will appear in
+  # the last term of the polyphase sum. 
+  cycleValid = (P-1)*(3*M-D) + M + 1 + addedLatency
 
   s = sink(M=M, D=D, P=P, init=initval)
-  #s = sink(t=startbranch, M=M, D=D, P=P, init=initval)
-  # In my hand written simulation notes for the OS PFB with M=4, D=3, P=2 I have
-  # the first outputs being produced at cycle 10 where as here they come at
-  # cycle 14. This is because the PEs now have the FIFOs built-in and we must
-  # wait for the FIFOs. The cycle the 1st data will be ready is (P-1)*(3*M-D)+M
-  # which equates in waiting the P-1 data delay and loop back delay fifos plus
-  # the last PE's sum buffer in the chain
-  #
-  # but something is still wrong... becuase the output is still off
 
   ospfb.enable()
   print("Data will be valid on cycle T={}".format(cycleValid))
