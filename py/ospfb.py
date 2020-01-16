@@ -7,6 +7,12 @@ def minTuple(t):
       m = t
     return m
 
+def maxTuple(t):
+    m = (0,0)
+    if (t[0] > m[0]):
+      m = t
+    return m
+
 
 class OSPFB:
   def __init__(self, M, D, P, initval, followHistory=False):
@@ -18,7 +24,7 @@ class OSPFB:
     self.iterval = initval
     self.followHistory = followHistory
 
-    self.modtimer = 0
+    self.modtimer = D-1
     self.cycle = 0
     self.run = False
 
@@ -90,7 +96,7 @@ class OSPFB:
     s = ""
     for (i, pe) in enumerate(self.PEs):
       s += "PE {}\n".format(i)
-      s += "-"*40
+      s += "-"*40 # add a line of '-'
       s += "\n"
       s += "{}\n".format(pe)
 
@@ -123,8 +129,8 @@ class pe:
       print("PE: Init error number of taps not correct")
     else:
       self.taps = ringbuffer(length=M, load=taps)
-      self.taps.head = (M-D)
-      self.taps.tail = (M-D)
+      self.taps.head = M-1# (M-D)
+      self.taps.tail = M-1# (M-D)
 
   def step(self, din, sin, vin):
     # default values
@@ -269,7 +275,7 @@ class pe:
   def formatHistory(self, dbfmt, sumfmt, delayfmt, validfmt):
 
     if self.dbhist is None:
-      print("No history has been accumulated")
+      print("No history has been accumulated... returning...")
       return ""
 
     strhist = ""
@@ -398,14 +404,16 @@ class sink:
     self.cycle = 0
 
     # determine the decimated time sample (n*D) and branch index that the initial
-    # value (init) will first appear in the last term of the polyphase sum
+    # value (init) will first appear in the last term (max -- first term would
+    # use min) of the polyphase sum
     self.l = []
     self.num = lambda m: (self.init+(self.P-1)*self.M+m)
     for m in range(0,self.M):
       if (self.num(m)%self.D == 0):
         self.l.append((int(self.num(m)/self.D), m))
 
-    self.startbranch = min(self.l, key=minTuple)
+    #self.startbranch = min(self.l, key=minTuple)
+    self.startbranch = max(self.l, key=maxTuple)
     self.m = self.startbranch[1]
     self.n = self.startbranch[0]
 
@@ -457,7 +465,11 @@ def latencyComp(P, M, D):
   tells us what port we should be accessing).
   """
 
-  res = (0,M-1)
+  # To again get the right latency compensation for targeting a specific output
+  # init value I had to modify the starting value from M-D to 0. I need to start
+  # to explain all of these changes to get things to line up because it went
+  # from M-1, M-D to 0.
+  res = (0,0)#M-D)
   delay = 0
   i = 0
   while i < P:
@@ -482,19 +494,13 @@ if __name__ == "__main__":
   pe1 = pe(idx=1, M=M, D=D, taps=taps[(M-1)::-1])
   pe2 = pe(idx=2, M=M, D=D, taps=taps[(2*M-1):(M-1):-1])
 
-  # This is where I should start tomorrow. But I am not sure I remember what I
-  # meant by pointers. If I am remembering correctly I am refering to the
+  # If I am remembering correctly I am refering to the
   # starting coefficient pointer. In the original DG/SFG the derivation of the
   # systolic architecture pointed to interleaving that resulted in starting at
   # the port M (in the critically sampled case) and so in the oversampled case I
   # then started at port M-D which is where we would start the coefficients
   # from. Which is why in the original hand drawn diagrams for M=4, D=3, P=3 the
   # filter coefficients for the first PE start h2, h1, h0, h3
-
-  # but now I am trying to determine how to know when the output is valid
-  # because I am trying to see patterns but then some cases seems to violate any
-  # hurestics or patters (like M=8, D=5, P=4) there are some '-' that show up
-  # after the cycleValid comparison.
 
   # I am also reconsidering the whole initvalue and determine the branch and
   # time the sample is valid and the whole rotated pointers because maybe we
@@ -505,11 +511,18 @@ if __name__ == "__main__":
   # but does it really make sense to ever talk about an initial value other than
   # zero?
 
-
   # w/o changing pointers in ospfb only valid initvals are -11, -8, -5, -2, etc.
   # but changes with M and **it is important to change** ( I think 1 is always
-  # safe though because it is the one after n=0
-  initval = 1
+  # safe though because it is the one after n=0 <--- how did this make sense???
+  # I think it made sense by noticing that x0 is the last sample before repeated
+  # samples and then x1 is the first sample of the next sequence (see hand drawn
+  # input sample examples).
+  initval = 0
+
+  # changing the initval is all about changing the modtimer which determines
+  # true or false (revisit the hand drawn example for the idea), which
+  # coefficient is the starting coefficient and then getting the added latency
+  # computation by modifing the initial mod value.
 
   ospfb = OSPFB(M=M, D=D, P=P, initval=initval, followHistory=False)
 
@@ -527,7 +540,7 @@ if __name__ == "__main__":
 
   # This is the cycle valid for when the initial value (initval) will appear in
   # the last term of the polyphase sum. 
-  cycleValid = (P-1)*(3*M-D) + M + 1 + addedLatency
+  cycleValid = (P-1)*(3*M-D) + M + 1 + addedLatency #+ M-D # Todo check this out
 
   s = sink(M=M, D=D, P=P, init=initval)
 
