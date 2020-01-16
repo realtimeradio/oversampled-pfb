@@ -3,9 +3,11 @@ clearvars;
 % read in simulation data
 fname = "../hls/data/out.dat";
 fp = fopen(fname);
-data = fread(fp, 'float32');
+%data = fread(fp, 'float32');
+data = fread(fp, 'int16');
+data = data./(2^15-1);
 fclose(fp);
-
+%%
 % TODO: Have data file contain these parameters and parse out
 
 % Simulation parameters, oversampled PFB parameters, and second stage FFT parameters

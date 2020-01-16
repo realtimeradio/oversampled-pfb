@@ -14,7 +14,7 @@
 #define FLOAT 0
 #define FIXED 1
 
-#define DTYPE FLOAT
+#define DTYPE FIXED
 
 // type definition and setup configuration
 const int FFT_LENGTH = M;
@@ -31,6 +31,7 @@ const int FFT_LENGTH = M;
   typedef ap_fixed<FFT_INPUT_WIDTH, 1> dtype_in;
   typedef ap_fixed<FFT_OUTPUT_WIDTH, FFT_OUTPUT_WIDTH-FFT_INPUT_WIDTH+1> dtype_out;
   typedef ap_fixed<16,1> coeff_t; // error in overloaded complex multiplication if binary point is not the same
+  typedef ap_fixed<40,24> accum_t; // error with getting the complex data type to work with HLS.... probably not going to work out well
 #endif
 
 
@@ -42,6 +43,7 @@ const int FFT_LENGTH = M;
 #include <complex>
 typedef std::complex<dtype_in> cx_datain_t;
 typedef std::complex<dtype_out> cx_dataout_t;
+typedef std::complex<accum_t> cx_accum_t;
 
 // Vivado FFT IP configuration
 struct os_pfb_config : hls::ip_fft::params_t {

@@ -8,20 +8,19 @@ void polyphase_filter(cx_datain_t in[D], cx_dataout_t filter_out[M], os_pfb_conf
   const coeff_t h[L] = {
     #include "coeff.dat"
   };
-
-  // shift states that have been pre-determined. Need to figure out how to auto-generate
-  static int shift_states[SHIFT_STATES] = {0, 8, 16, 24};
-  static int state_idx = 0;
+#pragma HLS ARRAY_PARTITION variable=h complete dim=1
 
   ifft_config->setDir(0); //inverse transform
 
   static cx_dataout_t filter_state[L];
+#pragma HLS ARRAY_PARTITION variable=filter_state complete dim=1
   cx_dataout_t temp[M]; // need a temp variable to not violate dataflow requirements in synthesis
 
   // shift/capture samples and polyphase fir filter
   filter_taps: for (int p = P-1; p >= 0 ; --p) {
-    #pragma HLS pipeline II=1 rewind
+//    #pragma HLS unroll complete
     filter_brances: for (int m = M-1; m >= 0; --m) {
+      #pragma HLS PIPELINE II=1 rewind
       int idx = p*M+m;
 
       if (idx <= D-1) {
@@ -35,8 +34,10 @@ void polyphase_filter(cx_datain_t in[D], cx_dataout_t filter_out[M], os_pfb_conf
     }
   }
 
-  polyphase_out: for (int i=0; i<M; i++)
+  polyphase_out: for (int i=0; i<M; i++) {
+    #pragma HLS pipeline II=1
     filter_out[i] = temp[i];
+  }
 
   return;
 }
@@ -53,6 +54,7 @@ void apply_phase_correction (cx_dataout_t filter_out[M], cx_dataout_t ifft_buffe
   int shift = shift_states[state_idx];
   int tmpidx;
   rotate: for (int i=0; i<M; ++i) {
+#pragma HLS pipeline II=1
     tmpidx = (M-shift+i) % M;
     ifft_buffer[i] = filter_out[tmpidx];
   }
@@ -65,6 +67,7 @@ void be(cx_dataout_t ifft_out[M], os_pfb_axis_t out[M], os_pfb_status_t* ifft_st
   // Interesting that I had to start at i=0 and copy out to M. Couldn't do what I had been doing
   // by starting at the end of the array. I wonder if this is has to do with how hls::fft fills ifft_out
   for (int i=0; i < M; ++i) {
+#pragma HLS pipeline II=1
     out[i].data = ifft_out[i];
     out[i].last = (i==M-1) ? 1 : 0;
   }

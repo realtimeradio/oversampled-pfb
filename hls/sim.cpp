@@ -13,16 +13,19 @@
 
 #include "os_pfb.h"
 
-#define CENTER_TONES
+//#define CENTER_TONES
 
 int main() {
 
   std::string fname = "data/data.dat";
+  std::string fsignal = "data/signal.dat";
   std::ofstream fp;
+  std::ofstream fpsig;
   fp.open(fname, std::ios::binary);
+  fpsig.open(fsignal, std::ios::binary);
 
   float fs = 10e3;   // sample rate (Hz)
-  float t = 2.0;     // simulation time length (seconds)
+  float t = 0.05;     // simulation time length (seconds)
 
   int Nsamps = fs*t;
   int windows = Nsamps/D; // cast as float? because the int division gives the right num...
@@ -44,7 +47,7 @@ int main() {
   int numFSoi = 1;
   float f_soi[numFSoi];
 
-  f_soi[0] = {2e3};
+  f_soi[0] = {4e3};
 
 #endif
 
@@ -73,9 +76,9 @@ int main() {
 
   // write simulation info to file
   //fp << t << "," << fs << std::endl; 
-  fp.write(&nbytes, sizeof(char));
-  fp.write((char*) &t, sizeof(float));
-  fp.write((char*) &fs, sizeof(float));
+//  fp.write(&nbytes, sizeof(char));
+//  fp.write((char*) &t, sizeof(float));
+//  fp.write((char*) &fs, sizeof(float));
 
   // initialize noise generator
   boost::mt19937 engine = boost::mt19937(time(0));
@@ -90,12 +93,12 @@ int main() {
   // TODO: our input will be 8-bit real/imag and scaling may need to happen in the core
   // I noticed that in the FFT output there is a a bias at the 0 Hz bin. Is this because of the
   // subtract by 0.5 in the quantization?
-  float D_MAX = 127.0;
-  float D_MIN = -128.0;
+  float D_MAX = 2047;//127.0;
+  float D_MIN = -2048;//-128.0;
   float QUANT = D_MAX-D_MIN;
 
-  float signalPower = 20;
-  float noisePower = 10;
+  float signalPower = 1;
+  float noisePower = 1;
   float signalAmp = sqrt(signalPower);
   float noiseAmp = sqrt(noisePower/2.0);
 
@@ -104,12 +107,15 @@ int main() {
   // to start at 0 even though filling the array backwards
   for (int i=Nsamps-1, n=0; i >= 0; --i, ++n) {
     float re=0, im=0;
+    dtype_in retmp=0, imtmp=0;
     // generate a tone at each SOI frequency
     for (int fid=0; fid < numFSoi; ++fid) {
       float omega = 2*M_PI*f_soi[fid]/fs;
       re += signalAmp*cos(omega*n);
       im += signalAmp*sin(omega*n);
     }
+    retmp = re;//(re-D_MIN)/QUANT - 0.5;
+    imtmp = im;//(im-D_MIN)/QUANT - 0.5;
     re += noiseAmp*gen();
     im += noiseAmp*gen();
 
@@ -118,10 +124,12 @@ int main() {
 
     //fp << data_re[i] << data_im[i];
     // inefficient to write each loop iter, but not worried about that now
+    fpsig.write((char*) &retmp, sizeof(dtype_in));
+    fpsig.write((char*) &imtmp, sizeof(dtype_in));
     fp.write((char*) &data[i], sizeof(cx_datain_t));
   }
   fp.close(); // close data file
-
+  fpsig.close();
   // initialize input/output pointers and counters
   int window_ctr = 0;
   cx_dataout_t pfb_output[M][windows];
