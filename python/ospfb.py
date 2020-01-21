@@ -2,20 +2,117 @@ import sys
 import numpy as np
 
 def minTuple(t):
-    m = (0,0)
-    if (t[0] < m[0]):
-      m = t
-    return m
+  m = (0,0)
+  if (t[0] < m[0]):
+    m = t
+  return m
 
 def maxTuple(t):
-    m = (0,0)
-    if (t[0] > m[0]):
-      m = t
-    return m
+  m = (0,0)
+  if (t[0] > m[0]):
+    m = t
+  return m
 
 
 class OSPFB:
+  """
+    Implementation of SFG OS PFB architecture to demonstrate functionality of
+    the design methodolgy.
+  """
+
   def __init__(self, M, D, P, initval, followHistory=False):
+    """
+      M - Polyphase branches (Transform size)
+
+      P - Taps per polyphase branch For this architecture this is also the number
+          of PEs used
+
+      D - Decimation rate
+
+      initval - starting symbolic sample index (e.g., -11 for 'x-11', or 0 for 'x0'
+
+      When using values other than '0' three changes must be made to correctly
+      operate the OSPFB.
+
+      ospfb.modtimer - needs to be changed such that correct true and false
+      values are created at the right time.
+
+      pe.taps.head and .tail - needs to be changed to the correct starting
+      position to make sure the correct coefficient is being applied.
+
+      res (short for "result", nothing special) - the second tuple element needs
+      to be changed setting up the start of the pattern for correclty determining
+      the added latency.
+
+      when the init value was 1 and the startbranch algorithm soliving for (n,m)
+      was finding the earliest n using minTuple
+      ospfb.modtimer = 0
+      pe.taps.head = M-D
+      pe.taps.tail = M-D
+
+      res = (0, M-1)
+
+      when the init value is 1 and the startbranch algorithm is solving for
+      (n,m) finding the latest n the parameters above are the same except
+
+      res = (0, M-D)
+
+      with init value of 0 and the startbranch algorithm solving for (n,m)
+      finding the latest n using maxTuple
+      ospfb.modtimer = D-1
+      pe.taps.head = M-1
+      pe.taps.tail = M-1
+
+      res = (0, 0)
+
+      For more information continue to read:
+
+      In the design methodology to produce the DG and SFG time indices are part
+      of the process to show data dependencies. During the derivation I had used
+      actual index values (-11, -10, -9...) instead of relative indices (n-2, n-1,
+      n, n+1...). This was partly because deriving the accurate SFG would have
+      required multiple projections and I had not completely understood how that
+      would work with this DG because of the irregular structure. Instead I used
+      re-timing techniques to slow the circuit and then interleave the different
+      branch calculations. For the critically sampled PFB I knew that the way to
+      think about the block diagram is to start delivering the samples at port M-1
+      and subsequently until port 0. Formulating the systolic architecture was
+      a matter of slowing the circuit down by a factor of M and placing the
+      branches in the holes starting at M-1 and subsequently down to port 0.
+
+      However in the oversampled case the approach to interleave the branches by
+      placing them in the holes created by the slow down of a factor of M didn't work
+      exactly in the same fashion. See my hand drawn notes and figures for the
+      differences. I believe that interleaving didn't work because the PEs after the
+      first projection are not homogeneous (different PEs required different behaviour
+      -- this is seen with the PE that crosses between DG layers). Keeping numeric values
+      instead of relative values was helpful to tweeze the correct functionality out
+      of interleaving the branches. So I was using the equation and absolute numbers
+      to make sure the timing lined up correctly. Relying on the OS pattern and that I
+      knew the modification to the CS PFB to make the OS PFB was to begin delivering
+      samples at port D-1. So in my hand written derivation I had chosen -11 but
+      figured it would work for any arbitrary value as long as the correct value was
+      being delivered to the correct port, multiplied by the right tap and that the
+      correct control was implemented to mark the input as when no samples are to be
+      delivered.
+
+      While this is a Polyphase FIR and it doesn't really make sense to talk about
+      initial samples other than '0' it has been helpful to make the initial
+      value arbitrary as it has helped investigate and understand further the
+      behaviour of this architecture that cannot be easily understood from the
+      hand drawn case. This is because it has shown how the mod pattern between
+      the transform size (M) and the decimation rate (D) contribute to the
+      latency of the design as PEs are added. This is because as the initial value
+      changes (as mentioned earlier) the modtimer determining 'True' and 'False'
+      values and the correct filter tap must be selected on the input. But, also
+      that to get the exact latency depends on which port we start delivering
+      samples to and how the mod patter begins. This is the second modulo
+      reminder of the 'res' variable in the atencyComp method. Which in the
+      Polyphase FIR interpolator explanation by f.j. Harris indicates which port
+      the output sample is pulled from. This isn't the exact same here but I am
+      working on figuring that out.
+
+    """
     self.M = M
     self.D = D
     self.P = P
@@ -129,8 +226,8 @@ class pe:
       print("PE: Init error number of taps not correct")
     else:
       self.taps = ringbuffer(length=M, load=taps)
-      self.taps.head = M-1# (M-D)
-      self.taps.tail = M-1# (M-D)
+      self.taps.head = M-1
+      self.taps.tail = M-1
 
   def step(self, din, sin, vin):
     # default values
@@ -174,6 +271,7 @@ class pe:
 #      self.sumbuf.write(s)
 #
 ############ PREV CONTROL/DATAFLOW #############
+
     # deterimine if data to use is from in our loopback delay buffer
     if self.delaybuf.full and (vin=="True"):
       d = self.delaybuf.war(din)
@@ -395,6 +493,11 @@ class ringbuffer:
     return s
 
 class sink:
+  """
+  Implements the OS PFB equations producing symbolic outputs for comparison for
+  verification
+  """
+
   def __init__(self, M, D, P, init):
     self.M = M
     self.P = P
@@ -404,8 +507,8 @@ class sink:
     self.cycle = 0
 
     # determine the decimated time sample (n*D) and branch index that the initial
-    # value (init) will first appear in the last term (max -- first term would
-    # use min) of the polyphase sum
+    # value (init) will first appear in the last term (max -- the earliest time
+    # would instead use min) of the polyphase sum
     self.l = []
     self.num = lambda m: (self.init+(self.P-1)*self.M+m)
     for m in range(0,self.M):
@@ -445,31 +548,35 @@ def latencyComp(P, M, D):
   resampling. This is the extra latency that the is added to the total latency
   of the PEs.
 
-  It is also noted that is is added in the case when we want to know when the
-  first complete sum is finished (i.e., the first input sample appears in the
-  last term of the polyphase sum).
+  Note that this is computed under the assumption that the desire is to know
+  when the first input sample appears in the last term of the polyphase sum.
+  Therefore, as mentioned previously this idea of "when are data valid" may
+  result in a different latency calculation. This is yet undecided as this is
+  the current area of investigation.
 
-  The way this works is by counting times the modulo operator is not triggered
-  and adding the difference (M-D). Each time the modulo operator is triggered
-  iterator counts up until it reaches P-1 (the number of PEs). What this does is
-  it follows the pattern that is seen in the derivation of the resampling
-  polyphase fir for when input samples should be delivered to the filter and
-  not. In this case the delay is incremented when we don't deliver a sample and
-  the PE count is increased when we do.
+  The algorithm works by counting the number of times the modulo operator is
+  not triggered and adding the difference (M-D). This is essentially a brute
+  force depection of the mod pattern as noted in some handwritten notes. Each
+  time the modulo operator is triggered the iterator counts up until it reaches P-1
+  (the number of PEs). What this does is it follows the pattern that is seen in
+  the derivation of the resampling polyphase FIR for when input samples should be
+  delivered to the filter and not. In this case the delay is incremented when we
+  don't deliver a sample and the PE count is increased when we do.
 
-  Notice that the inital value for res = (0, M-1) this is required to start
-  counting the pattern correctly. I am still trying to figure this out but my
-  best explanation for now is that it is in line with the fact that we would
-  normally (under critically sampled conditions) deliver samples starting at
-  port M-1 which is what the output of the mod() operator tells us to do (it
-  tells us what port we should be accessing).
+  Notice that the inital value for res = (0, 0) the second value of the tuple is
+  required to change as to start the counting pattern correctly when different
+  starting assumptions are made. This is what is mentioned in the notes in the
+  OSPFB class. That when the intial value is being delivered to port D-1 and when
+  we are solving using the earliest (or latest) (n,m) pair the second element of
+  the tuple must be changed as to start the counting pattern correctly. This is
+  what is meant when writing about "slipping" the pattern.  I am still trying to
+  figure this out but my best explanation for now is that it is in line with the
+  fact that we would normally (under critically sampled conditions) deliver
+  samples starting at port M-1 which is what the output of the mod() operator
+  tells us to do (it tells us what port we should be accessing).
   """
 
-  # To again get the right latency compensation for targeting a specific output
-  # init value I had to modify the starting value from M-D to 0. I need to start
-  # to explain all of these changes to get things to line up because it went
-  # from M-1, M-D to 0.
-  res = (0,0)#M-D)
+  res = (0,0)
   delay = 0
   i = 0
   while i < P:
@@ -481,68 +588,47 @@ def latencyComp(P, M, D):
 
   return delay
 
+def computeLatency(P, M, D):
+  """
+  Produces the cycle that the first input value will be in the last term of
+  the polyphase output. While this function is created to indicate when data
+  are valid it currently being investigated to what extend we need to know or
+  even care.
+
+  Each PE contributes 2M+(M-D) = 3M-D delay except the last PE which we only
+  need to wait M cycles before the output is delivered. The offset of one moves
+  us off the zero cycle.
+
+  The latency compensation is manifest through the M-D loopback delay and the
+  mod pattern that is a result of the oversampled nature. See the latency comp
+  calculation for more notes and as documented elsewhere.
+  """
+
+  return (P-1)*(3*M-D) + M + 1 + latencyComp(P, M, D)
+
+
 if __name__ == "__main__":
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
+
+  # OS PFB parameters
+  M = 8; D = 6; P = 3;
 
   # example ring buffer initialization
   rb = ringbuffer(8)
 
-  M = 8; D = 5; P = 4;
-
-  # manual manual tap and pe instantiation
+  # manual tap and pe instantiation
   taps = ['h{}'.format(i) for i in range(0,M*P)]
   pe1 = pe(idx=1, M=M, D=D, taps=taps[(M-1)::-1])
   pe2 = pe(idx=2, M=M, D=D, taps=taps[(2*M-1):(M-1):-1])
 
-  # If I am remembering correctly I am refering to the
-  # starting coefficient pointer. In the original DG/SFG the derivation of the
-  # systolic architecture pointed to interleaving that resulted in starting at
-  # the port M (in the critically sampled case) and so in the oversampled case I
-  # then started at port M-D which is where we would start the coefficients
-  # from. Which is why in the original hand drawn diagrams for M=4, D=3, P=3 the
-  # filter coefficients for the first PE start h2, h1, h0, h3
-
-  # I am also reconsidering the whole initvalue and determine the branch and
-  # time the sample is valid and the whole rotated pointers because maybe we
-  # want to just always start with sample x0 h0. This stems from the fact I
-  # still need to know when the outputs are the ones that I care about and can
-  # rotate in the phase correction buffer....
-
-  # but does it really make sense to ever talk about an initial value other than
-  # zero?
-
-  # w/o changing pointers in ospfb only valid initvals are -11, -8, -5, -2, etc.
-  # but changes with M and **it is important to change** ( I think 1 is always
-  # safe though because it is the one after n=0 <--- how did this make sense???
-  # I think it made sense by noticing that x0 is the last sample before repeated
-  # samples and then x1 is the first sample of the next sequence (see hand drawn
-  # input sample examples).
+  # It does not make sense to talk about samples other than '0' with an FIR
+  # but this is left for verification with arbitrary values.
   initval = 0
-
-  # changing the initval is all about changing the modtimer which determines
-  # true or false (revisit the hand drawn example for the idea), which
-  # coefficient is the starting coefficient and then getting the added latency
-  # computation by modifing the initial mod value.
-
   ospfb = OSPFB(M=M, D=D, P=P, initval=initval, followHistory=False)
 
-  # A poorly described explanation of how this is determined (and kind of why)
-  # is in the comments of the latencyComp function.
-  addedLatency = latencyComp(P, M, D)
-
-  # Each PE contributes 2M+(M-D) = 3M-D delay but on the last PE we only way M
-  # before the output is delivered. The offset of one moves us off cycle 0
-  # and see latencyComp for the calculation of the added latency.
-  # in my hand written simulation notes for the OS PFB with M=4, D=3, and P=2 I
-  # have the first valid output being produced at cycle 10 the difference is I
-  # wasn't taking into account the additional M latency that would be present in
-  # a generic PE (coding a PE that didn't have that delay).
-
-  # This is the cycle valid for when the initial value (initval) will appear in
-  # the last term of the polyphase sum. 
-  cycleValid = (P-1)*(3*M-D) + M + 1 + addedLatency #+ M-D # Todo check this out
-
   s = sink(M=M, D=D, P=P, init=initval)
+
+  cycleValid = computeLatency(P, M ,D)
 
   ospfb.enable()
   print("Data will be valid on cycle T={}".format(cycleValid))
