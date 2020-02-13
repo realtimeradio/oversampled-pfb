@@ -1,18 +1,79 @@
 import numpy as np
 from ospfb import ringbuffer
 
+
 class ppbuf:
-  def __init__(self, length=8): # general M
+  def __init__(self, M=8, D=6):
+    """
+    A ping pong buffer implementing the phase rotation behavior between the
+    polyphase FIR and M-PT FFT in the oversampled PFB.
 
-    self.length = length
+    While this class if called ppbuf (ping pong buffer) it really is the fully
+    phase rotation implementation. In otherwords it combines both functionality the
+    implementation of the ping pong data structure and applying the phase rotation
+    on that buffer
+    """
+
+    # OS PFB parameters
+
+    # The number of of shift states is the numerator of the oversampling ratio
+    # which is the reduced form of M/D
+    self.M = M
+    self.D = D
+    self.S = M//np.gcd(self.M, self.D)
+    self.shifts = [s*D % M for s in range(0, self.S)]
+    self.stateIdx = 0
+
+    # ping pong buffer control
     self.setA = False
+    self.stkA = stack(length=self.M)
+    self.stkB = stack(length=self.M)
 
-    self.stkA = stack(length=length)
-    self.stkB = stack(length=length)
+    # meta data
+    self.cycle = 0
+    self.modCounter = 0
 
+  def step(self, din):
+    """
+    A single cycle transaction of the phase compensation operation
+    """
 
-  def step(self, din, dout):
-    pass
+    dout = "-"
+
+    if self.setA:
+      self.stkA.write(din)
+      dout = self.stkB.read()
+
+      if self.stkA.full:
+        self.modCounter +=1
+        # next M cycles will load B and read out from A
+        # set A to read from the next phase roation state on the next iteration
+        self.setA = False
+        self.stkA.top= self.shifts[self.stateIdx]
+        self.stkA.bottom = self.shifts[self.stateIdx]
+        self.stateIdx = (self.stateIdx+1) % self.S
+
+        # prepare the B stack to be loaded
+        self.stkB.top = 0
+        self.stkB.bottom = 0
+    else:
+      self.stkB.write(din)
+      dout = self.stkA.read()
+
+      if self.stkB.full:
+        self.modCounter +=1
+        # next M cycles will load A and read out from B
+        # set B to read from the next phase roation state on the next iteration
+        self.setA = True
+        self.stkA.top = 0
+        self.stkA.bottom = 0
+
+        self.stkB.top = self.shifts[self.stateIdx]
+        self.stkB.bottom = self.shifts[self.stateIdx]
+        self.stateIdx = (self.stateIdx+1) % self.S
+
+    self.cycle += 1
+    return dout
 
 class stack:
   # max representable is a 128 long string per buffer element
@@ -23,7 +84,7 @@ class stack:
     self.bottom = 0
     self.full = False
     self.empty = True
-    # don't need the negative 1 because the wrap around helps
+    # don't need the +1 because the wrap around helps
     self.length = length # +1 potentially need to  add a dummy space to help at top
 
     self.buf = np.zeros(length, self.dt)
@@ -64,7 +125,8 @@ class stack:
     res = (self.top, din)
     self.buf[self.top] = din
     # the mod wrap around is to have an extra space and used to indicate when
-    # full and empty. Works because the bottom is never used to access elements.
+    # full and empty. Works because the bottom is never used to access elements
+    # and we have a power of 2 buffer size. 
     self.top = (self.top+1) % self.length
     if (self.top == self.bottom):
       self.full = True
@@ -112,60 +174,18 @@ if __name__ == "__main__":
 
   stk = stack(length=M)
   src = source(init=M)
+  pp = ppbuf(M=M, D=D)
 
-  pp = ppbuf(length=M)
-  clearIn = False
   fftin = []
-  while src.i < 12:
+  while pp.modCounter < 12:
     nextsamp = src.genSample()
-    out = "-"
 
-    if clearIn:
+    if (pp.stkA.full and pp.stkB.empty) or (pp.stkB.full and pp.stkA.empty):
       print("**********************************************************************")
       print("FFT Input: ", fftin)
       print("**********************************************************************\n")
       fftin = []
-      clearIn = False
 
-    # Note that the control does not count cycles and mod on the transform
-    # length M. Instead this is built into full/empty flag and instead control
-    # monitors this. When the setting buffer is full it is marked for getting to
-    # begin on the next cycle and vice versa.
-    if pp.setA:
-      pp.stkA.write(nextsamp)
-      out = pp.stkB.read()
-
-      if pp.stkA.full:
-        clearIn = True
-        # next M cycles will load B and read out from A
-        # set A to read from the next phase roation state on the next iteration
-        pp.setA = False
-        pp.stkA.top= rotState[stateIdx]
-        pp.stkA.bottom = rotState[stateIdx]
-        stateIdx = (stateIdx+1) % Nstates
-
-        # prepare the B stack to be loaded
-        pp.stkB.top = 0
-        pp.stkB.bottom = 0
-    else:
-      pp.stkB.write(nextsamp)
-      out = pp.stkA.read()
-
-      if pp.stkB.full:
-        clearIn = True
-        pp.setA = True
-        pp.stkA.top = 0
-        pp.stkA.bottom = 0
-
-        pp.stkB.top = rotState[stateIdx]
-        pp.stkB.bottom = rotState[stateIdx]
-        stateIdx = (stateIdx+1) % Nstates
-
+    out = pp.step(nextsamp)
     fftin.append(out)
 
- # it looks like I have the stack programmed correctly. Then shifting the top
- # and bottom to the same values in the shift state pattern works. I tried
- # making use of the ending spot of the read out of the stack but it doesn't
- # look like the rotation pattern deceases how I would like. So while the
- # original way works the hope is that it will be acceptable for hdl design and
- # not inquire additional latency. 
