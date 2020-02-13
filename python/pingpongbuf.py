@@ -1,41 +1,96 @@
 import numpy as np
 from ospfb import ringbuffer
 
+class phaseComp:
+  """
+  Phase compensation operation for the oversampled polyphase FIR
 
-class ppbuf:
+  This operation is necessary to compensate for the oversampling done by the
+  polyphase FIR and align the samples correctly with the expected phase of the
+  kernel for the M-Pt FFT
+  """
+
   def __init__(self, M=8, D=6):
-    """
-    A ping pong buffer implementing the phase rotation behavior between the
-    polyphase FIR and M-PT FFT in the oversampled PFB.
-
-    While this class if called ppbuf (ping pong buffer) it really is the fully
-    phase rotation implementation. In otherwords it combines both functionality the
-    implementation of the ping pong data structure and applying the phase rotation
-    on that buffer
-    """
-
-    # OS PFB parameters
+    # OS PFB Parameters
 
     # The number of of shift states is the numerator of the oversampling ratio
     # which is the reduced form of M/D
     self.M = M
     self.D = D
-    self.S = M//np.gcd(self.M, self.D)
+    self.S = M//np.gcd(self.M, self.D) 
     self.shifts = [s*D % M for s in range(0, self.S)]
     self.stateIdx = 0
 
-    # ping pong buffer control
-    self.setA = False
-    self.stkA = stack(length=self.M)
-    self.stkB = stack(length=self.M)
+    # ping pong buffer
+    self.pp = ppbuf(length=self.M)
 
     # meta data
-    self.cycle = 0
     self.modCounter = 0
+    self.cycle = 0
 
   def step(self, din):
     """
-    A single cycle transaction of the phase compensation operation
+    Single cycle transaction of the phase compensation operation
+
+    When the ping pong buffer is full the correct rotation is applied on the
+    cycle as being filled to correctly read the samples out of the buffer in
+    the correct order.
+    """
+
+    dout = "-"
+
+    dout = self.pp.step(din)
+
+    # Is the seperate class really the structure I want to pursue?
+    # What I am worried about is imposing too many step-by-step assumptions that
+    # is not fit for hardware development.
+
+    # Because without too much planning, the idea is that the phase roation hdl
+    # implementation would be a state machine and the combinational logic in
+    # that seems to match more the previous implementation when it was one
+    # combined class.
+    if self.pp.full():
+      self.modCounter += 1
+      if self.pp.setA:
+        self.pp.stkB.top = self.shifts[self.stateIdx]
+        self.pp.stkB.bottom = self.shifts[self.stateIdx]
+        self.stateIdx = (self.stateIdx+1) % self.S
+      else:
+        self.pp.stkA.top = self.shifts[self.stateIdx]
+        self.pp.stkA.bottom = self.shifts[self.stateIdx]
+        self.stateIdx = (self.stateIdx+1) % self.S
+
+    self.cycle += 1
+    return dout
+
+
+class ppbuf:
+  """
+  A generic ping pong buffer data structure implementation
+  """
+  def __init__(self, length=8):
+
+    self.length = length
+
+    # ping pong buffer control
+    self.setA = False
+    self.stkA = stack(length=length)
+    self.stkB = stack(length=length)
+
+    self.cycle = 0
+
+  def full(self):
+    """
+    The ping pong buffer is considered full when of the writing buffer is full
+    and the reading buffer is empty.
+    """
+    return (self.stkA.full and self.stkB.empty) \
+            or (self.stkA.empty and self.stkB.full)
+
+  def step(self, din):
+    """
+    A single cycle transaction of the ping pong buffer. A sample is written in
+    and a sample is read out.
     """
 
     dout = "-"
@@ -45,13 +100,9 @@ class ppbuf:
       dout = self.stkB.read()
 
       if self.stkA.full:
-        self.modCounter +=1
         # next M cycles will load B and read out from A
         # set A to read from the next phase roation state on the next iteration
         self.setA = False
-        self.stkA.top= self.shifts[self.stateIdx]
-        self.stkA.bottom = self.shifts[self.stateIdx]
-        self.stateIdx = (self.stateIdx+1) % self.S
 
         # prepare the B stack to be loaded
         self.stkB.top = 0
@@ -61,16 +112,11 @@ class ppbuf:
       dout = self.stkA.read()
 
       if self.stkB.full:
-        self.modCounter +=1
         # next M cycles will load A and read out from B
-        # set B to read from the next phase roation state on the next iteration
+        # set A to read from the next phase roation state on the next iteration
         self.setA = True
         self.stkA.top = 0
         self.stkA.bottom = 0
-
-        self.stkB.top = self.shifts[self.stateIdx]
-        self.stkB.bottom = self.shifts[self.stateIdx]
-        self.stateIdx = (self.stateIdx+1) % self.S
 
     self.cycle += 1
     return dout
@@ -125,8 +171,7 @@ class stack:
     res = (self.top, din)
     self.buf[self.top] = din
     # the mod wrap around is to have an extra space and used to indicate when
-    # full and empty. Works because the bottom is never used to access elements
-    # and we have a power of 2 buffer size. 
+    # full and empty. Works because the bottom is never used to access elements.
     self.top = (self.top+1) % self.length
     if (self.top == self.bottom):
       self.full = True
@@ -144,6 +189,9 @@ class stack:
 
 
 class source:
+  """
+  Simulation source for generating samples
+  """
   def __init__(self, init=8): # general M
     self.M = init
     self.curval = init-1 # general M-1
@@ -162,30 +210,24 @@ class source:
   
 
 if __name__ == "__main__":
-  print("ping pong buffer impl")
+  print("OSPFB phase compensation implementation")
 
   M = 8
   D = 6
-  Nstates = M//np.gcd(M,D)
 
-  rotState = [n*D % M for n in range(0,Nstates)]
-  stateIdx = 0
-  print(rotState)
-
-  stk = stack(length=M)
   src = source(init=M)
-  pp = ppbuf(M=M, D=D)
-
+  pc = phaseComp(M=M, D=D)
   fftin = []
-  while pp.modCounter < 12:
+
+  while pc.modCounter < 12:
     nextsamp = src.genSample()
 
-    if (pp.stkA.full and pp.stkB.empty) or (pp.stkB.full and pp.stkA.empty):
+    if pc.pp.full():
       print("**********************************************************************")
       print("FFT Input: ", fftin)
       print("**********************************************************************\n")
       fftin = []
 
-    out = pp.step(nextsamp)
+    out = pc.step(nextsamp)
     fftin.append(out)
 
