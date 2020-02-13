@@ -4,12 +4,15 @@ from ospfb import ringbuffer
 class ppbuf:
   def __init__(self, length=8): # general M
 
-    # it is entirly possible that I instead should code a stack data type
-    # instead of recycling the ringbuffer
-    self.bufA = ringbuffer(length)
-    self.bufB = ringbuffer(length)
-
+    self.length = length
     self.setA = False
+
+    self.stkA = stack(length=length)
+    self.stkB = stack(length=length)
+
+
+  def step(self, din, dout):
+    pass
 
 class stack:
   # max representable is a 128 long string per buffer element
@@ -101,41 +104,64 @@ if __name__ == "__main__":
 
   M = 8
   D = 6
+  Nstates = M//np.gcd(M,D)
 
-  rotStates = [n*D % M for n in range(0,4)]
-  print(rotStates)
+  rotState = [n*D % M for n in range(0,Nstates)]
+  stateIdx = 0
+  print(rotState)
 
+  stk = stack(length=M)
   src = source(init=M)
 
   pp = ppbuf(length=M)
-  stk = stack(length=M)
-
-  while src.i < 5:
+  clearIn = False
+  fftin = []
+  while src.i < 12:
     nextsamp = src.genSample()
     out = "-"
 
-    # how should we set up the control?
-    # invalidate memory? Start at 0 and go until fill and then switch?
+    if clearIn:
+      print("**********************************************************************")
+      print("FFT Input: ", fftin)
+      print("**********************************************************************\n")
+      fftin = []
+      clearIn = False
 
-    
-
+    # Note that the control does not count cycles and mod on the transform
+    # length M. Instead this is built into full/empty flag and instead control
+    # monitors this. When the setting buffer is full it is marked for getting to
+    # begin on the next cycle and vice versa.
     if pp.setA:
-      if not pp.bufA.full:
-        pp.bufA.write(nextsamp)
-        out = pp.bufB.read()
-      else:
+      pp.stkA.write(nextsamp)
+      out = pp.stkB.read()
+
+      if pp.stkA.full:
+        clearIn = True
+        # next M cycles will load B and read out from A
+        # set A to read from the next phase roation state on the next iteration
         pp.setA = False
-        pp.bufA.head = 0
-        pp.bufB 
+        pp.stkA.top= rotState[stateIdx]
+        pp.stkA.bottom = rotState[stateIdx]
+        stateIdx = (stateIdx+1) % Nstates
+
+        # prepare the B stack to be loaded
+        pp.stkB.top = 0
+        pp.stkB.bottom = 0
     else:
-      if not pp.bufB.full:
-        pp.bufB.write(nextsamp)
-        out = pp.bufA.read()
+      pp.stkB.write(nextsamp)
+      out = pp.stkA.read()
 
-      else:
+      if pp.stkB.full:
+        clearIn = True
         pp.setA = True
+        pp.stkA.top = 0
+        pp.stkA.bottom = 0
 
+        pp.stkB.top = rotState[stateIdx]
+        pp.stkB.bottom = rotState[stateIdx]
+        stateIdx = (stateIdx+1) % Nstates
 
+    fftin.append(out)
 
  # it looks like I have the stack programmed correctly. Then shifting the top
  # and bottom to the same values in the shift state pattern works. I tried
