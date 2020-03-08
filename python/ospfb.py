@@ -1,6 +1,8 @@
 import sys
 import numpy as np
 
+from phasecomp import PhaseComp
+
 def minTuple(t):
   m = (0,0)
   if (t[0] < m[0]):
@@ -129,8 +131,19 @@ class OSPFB:
     self.taps = ['h{}'.format(i) for i in range(0, self.L)]
 
     # initialize PEs elements
-    self.PEs = [pe(idx=1, M=M, D=D, taps=self.taps[M-1::-1], keepHistory=self.followHistory)]
-    self.PEs += [pe(idx=i, M=M, D=D, taps=self.taps[i*M-1:(i-1)*M-1:-1], keepHistory = self.followHistory) for i in range(2, (P+1))]
+    self.PEs = [pe(idx=1, M=M, D=D,
+                    taps=self.taps[M-1::-1],
+                    keepHistory=self.followHistory)]
+
+    self.PEs += [pe(idx=i, M=M, D=D,
+                     taps=self.taps[i*M-1:(i-1)*M-1:-1],
+                     keepHistory = self.followHistory) \
+                 for i in range(2, (P+1))]
+
+    # initialize phase compensation block
+    self.pc = PhaseComp(M=self.M, D=self.D,
+                        dt='str',
+                        keepHistory=self.followHistory)
 
   def enable(self):
     self.run = (not self.run)
@@ -150,21 +163,31 @@ class OSPFB:
       self.iterval += 1
 
     self.modtimer = (self.modtimer+1) % self.M
-    peout = self.runPEs(dnext, vnext)
+    peout, firout = self.runPEs(dnext, vnext)
     print("T={:<3d} in:({:<4s}, {:<5s}), out:({:<4s}, {}, {})".format(self.cycle, dnext, vnext,
                                                   peout[0], peout[1], peout[2]))
 
-    return peout
+    return (peout, firout)
 
   def runPEs(self, din, vin):
-    peout = () # empty tuple just as a reference it is tuple out
+    # empty tuple as a reference it is tuple out format is (dout, sout, vout)
+    peout = ()
     for (i, pe) in enumerate(self.PEs):
       if i==0:
         peout = pe.step(din, '0', vin)
       else:
         peout = pe.step(peout[0], peout[1], peout[2])
 
-    return peout
+    firout = peout[1]
+    # the last output of the PE is then input to the phase compensation prior to
+    # the FFT
+    # TODO: enable calculation should be replaced with a valid signal. Currently
+    # the valid buffers are length 2*M but I am getting a little more convinced
+    # that it should be M. See notes.
+    en = self.M*(self.P-1)+2
+    if (self.cycle) >= en:
+      peout = self.pc.step(peout[0], peout[1], peout[2])
+    return (peout, firout)
 
   def valid(self):
     return "True" if self.modtimer < self.D else "False"
@@ -172,10 +195,14 @@ class OSPFB:
   def getHistory(self, dumpf=False):
     strhist = ""
     # only need to increase the databuf and delaybuf large cycle counts
-    dbfmt = "{{{:s}}}".format(":<5s") # field width of 5 for when need negative inputs 3 when positive
+
+    # field width of 5 for when need negative inputs 3 when positive
+    dbfmt = "{{{:s}}}".format(":<5s")
     validfmt = "{{{:s}}}".format(":<2s")
-    delayfmt = "{{{:s}}}".format(":<5s") # field width of 5 for when need negative inputs 3 when positive
-    sumfmt = "{{:<{:d}s}}".format((self.P-1)*9+6) # 9 for the 6 pe char and 3 for the ' + ' connecting sum values beetween pe
+    # field width of 5 for when need negative inputs 3 when positive
+    delayfmt = "{{{:s}}}".format(":<5s")
+    # 9 for the 6 pe char and 3 for the ' + ' connecting sum values beetween pe
+    sumfmt = "{{:<{:d}s}}".format((self.P-1)*9+6)
     for i in range(self.P-1, -1, -1):
       pe = self.PEs[i]
       #sumfmt = "{{:>{:d}s}}".format(i*9+6) #iter over pe if different lengths needed
@@ -431,6 +458,8 @@ class ringbuffer:
     self.length = length
 
     self.buf = np.zeros(length, self.dt)
+    # will need a generic empty data generator depending on the data type so
+    # that switching between symbolic and numeric modes works
     self.buf = ["-" for i in range(0, self.length)]
 
     if load is not None:
@@ -498,42 +527,107 @@ class sink:
   verification
   """
 
-  def __init__(self, M, D, P, init):
+  def __init__(self, M, D, P, init=None, order='reversed'):
+    # OS PFB parameters
     self.M = M
     self.P = P
     self.D = D
-    self.init = init
 
-    self.cycle = 0
+    # phase rotation compensation states
+    self.S = M//np.gcd(self.M, self.D)
+    self.shifts = [s*D % M for s in range(0, self.S)]
+
+    # output processing order
+    # reversed - processing order (port M-1 down to zero, newest to oldest)
+    # natrual  - parallel or natrual order (port 0 to M, oldest to newest)
+    self.order = order
 
     # determine the decimated time sample (n*D) and branch index that the initial
     # value (init) will first appear in the last term (max -- the earliest time
     # would instead use min) of the polyphase sum
-    self.l = []
-    self.num = lambda m: (self.init+(self.P-1)*self.M+m)
-    for m in range(0,self.M):
-      if (self.num(m)%self.D == 0):
-        self.l.append((int(self.num(m)/self.D), m))
+    self.init = init
+    if self.init is not None:
+      ## polyphase fir solution
+      #self.l = []
+      #self.num = lambda m: (self.init+(self.P-1)*self.M+m)
+      #for m in range(0,self.M):
+      #  if (self.num(m)%self.D == 0): # (no remainder -- is integer)
+      #    self.l.append((int(self.num(m)/self.D), m))
 
-    #self.startbranch = min(self.l, key=minTuple)
-    self.startbranch = max(self.l, key=maxTuple)
-    self.m = self.startbranch[1]
-    self.n = self.startbranch[0]
+      # phase rotation solution
+      self.l = []
+      self.num = lambda m: (self.init+(self.P-1)*self.M+m)
+      for mprime in range(0,self.M):
+        if (self.num(mprime)%self.D == 0): # (no remainder -- is integer)
+          n = int(self.num(mprime)/self.D)
+          s = int(n % self.S)
+          rs = self.shifts[s]
+          m = (mprime + rs) % self.M # TODO: verify this solution is true in general...
+          print("sol: n={}, mprime={}, s={}, rs={}, m={}".format(n, mprime, s, rs,m))
+          self.l.append((n, m))
+          #self.l.append((int(self.num(m)/self.D), m))
+
+      #self.startbranch = min(self.l, key=minTuple)
+      self.startbranch = max(self.l, key=maxTuple)
+      self.n = self.startbranch[0]  # sample time
+      self.m = self.startbranch[1]  # branch index
+    else:
+      self.n = 0
+      if order == "reversed":
+        self.m = self.M-1
+      else:
+        self.m = 0
+
+    # tmp state shift index to store
+    self.stateidx = self.n % self.S # state index
+
+    # meta-data
+    self.cycle = 0
 
   def step(self):
+    """
+    A single cycle step returning the mth branch output at time nD for both the
+    polyphase FIR and phase rotation
+    """
     self.cycle += 1
 
-    ym = "y{}({}) = ".format(self.m,self.n*self.D)
+    t = self.n*self.D   # decimated sample time
+    s = self.n % self.S # state index
+    self.stateidx = s
+
+    # polyphase FIR output
+    ym = "y{}[{}] = ".format(self.m,self.n*self.D)
     for p in range(0, self.P):
       if p==0:
         ym += "h{}x{}".format(self.hmap(p,self.m), self.xmap(p,self.m))
       else:
         ym += " + h{}x{}".format(self.hmap(p,self.m), self.xmap(p,self.m))
 
-    if self.m==0:
-      self.n += 1
-    self.m = (self.m-1) % self.M
-    return ym
+    # phase rotation output
+    rs = (self.m-self.shifts[s]) % self.M
+    ymprime = "y'({},{})[{}] = y{}[{}] = ".format(self.m, s, t, rs, t)
+    for p in range(0, self.P):
+      if p==0:
+        ymprime += "h{}x{}".format(self.hmap(p, rs), self.xmap(p, rs))
+      else:
+        ymprime += " + h{}x{}".format(self.hmap(p,rs), self.xmap(p, rs))
+
+    yex = "y{}".format(rs+self.n*self.M)
+
+    if self.order == "reversed":
+      # output ordered from port M-1 down to zero
+      if self.m==0:
+        self.n += 1
+      self.m = (self.m-1) % self.M
+    else:
+      # output ordered from port 0 to M-1
+      if self.m==self.M-1:
+        self.n += 1
+      self.m = (self.m+1) % self.M
+
+    # output tuple format
+    # (polyphase fir output, phase rotation, debug val matching handdrawn)
+    return (ym, ymprime, yex)
 
   def hmap(self, p, m):
     return p*self.M+m
@@ -604,14 +698,14 @@ def computeLatency(P, M, D):
   calculation for more notes and as documented elsewhere.
   """
 
-  return (P-1)*(3*M-D) + M + 1 + latencyComp(P, M, D)
+  return (P-1)*(3*M-D) + M + 1 + latencyComp(P, M, D) + M
 
 
 if __name__ == "__main__":
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
 
   # OS PFB parameters
-  M = 8; D = 6; P = 3;
+  M = 32; D = 24; P = 8;
 
   # example ring buffer initialization
   rb = ringbuffer(8)
@@ -625,19 +719,115 @@ if __name__ == "__main__":
   # but this is left for verification with arbitrary values.
   initval = 0
   ospfb = OSPFB(M=M, D=D, P=P, initval=initval, followHistory=False)
-
-  s = sink(M=M, D=D, P=P, init=initval)
-
-  cycleValid = computeLatency(P, M ,D)
-
   ospfb.enable()
-  print("Data will be valid on cycle T={}".format(cycleValid))
-  for i in range(0,cycleValid):
-    peout = ospfb.step()
-    if ospfb.cycle >= cycleValid:
-      sinkout =s.step()
-      print(sinkout)
-      sinksplit = sinkout.split(" = ")
-      if not (sinksplit[1] == peout[1]):
-        print("Outputs did not match")
+  s = sink(M=M, D=D, P=P, init=None, order='natural')
 
+  # start stepping sink with ospfb inst. But will need to then step several
+  # cycles forward because all the output isn't present. I wonder if it is worth
+  # it to think about how to initialize the hardware such that the right values
+  # are in place... instead of all blanks initially.
+  Tvalid = M*P+2
+  cycleValid = computeLatency(P, M ,D) #+ s.shifts[s.stateidx]
+  Tend = 100000
+
+  # need to advance the ospfb before stepping the sink
+  for i in range(0, Tvalid-1):
+    peout, pe_firout = ospfb.step()
+
+  for i in range(0, Tend):
+    peout, _ = ospfb.step()
+    _, sink_rotout, _ = s.step()
+
+    # retrieve just the sum form both the filter and sink
+    rot = peout[1]
+    sink_rotout = sink_rotout.split(" = ")[2]
+
+    # with symbolic filter outputs the filter state is not initialized. The
+    # filter is instead full of null values ('-'). We therefore cannot compare
+    # the full sink value with the PFB output. Instead we can trim the filter
+    # output and just compare what we do have.
+    nid = rot.find('-')
+    if (nid) >= 0:
+      nplus = rot.find('+')
+      if nid < nplus : # a null '-' appears before the first '+' (i.e., in the first tap)
+        #print("skipping check, empty first tap")
+        continue
+
+      # form a shortened version of the filter output that can be compared with
+      # the sink value
+      sub = rot[0:nid]
+      rot = sub.rpartition(' + ')[0]
+
+    if (sink_rotout.find(rot) != 0):
+      print("symbolic sim failed!")
+      print(sink_rotout)
+      print(rot)
+      sys.exit()
+
+
+  #for i in range(0, 100):
+  #  peout, pe_firout = ospfb.step()
+  #  (sink_firout, sink_rotout, debugout) = s.step()
+  #  firsplit = sink_firout.split(" = ")
+  #  rotsplit = sink_rotout.split(" = ")
+  #  #if not (firsplit[1] == pe_firout):
+  #  #  print("Polyphase FIR outputs did not match expected")
+  #  if not (rotsplit[2] == peout[1]):
+  #    print("Phase rotation outputs did not match expected")
+
+  #s = sink(M=M, D=D, P=P, init=initval, order='natural')
+
+  #cycleValid = computeLatency(P, M ,D) #+ s.shifts[s.stateidx]
+
+  #ospfb.enable()
+  #sys.exit()
+  #print("Data will be valid on cycle T={}".format(cycleValid))
+  #for i in range(0,cycleValid):
+  #  peout, pe_firout = ospfb.step()
+  #  if ospfb.cycle >= cycleValid:
+  #    (sink_firout, sink_rotout, debugout) = s.step()
+  #    firsplit = sink_firout.split(" = ")
+  #    rotsplit = sink_rotout.split(" = ")
+  #    if not (firsplit[1] == pe_firout):
+  #      print("Polyphase FIR outputs did not match expected")
+  #    if not (rotsplit[2] == peout[1]):
+  #      print("Phase rotation outputs did not match expected")
+
+
+# NOTE
+# I have two time approaches that I am needing to rationalize. For almost the
+# entire time I was developing this ospfb architecture wanting to make sure I
+# knew when the first sample (relly the x0 sample) was in the last tap on the
+# output.
+#
+# I thought through the process to get build the sink that could compute it and
+# then I derived the latency computation AND compensation due to the delay line
+# that would allow me to line up the polyphase FIR components and know exactly
+# when that initial sample showed up in the last tap.
+#
+# Now working on the phase compensation to think about it I realized that
+# starting the phase compensation core was independent of D and that any M, P
+# pair you waited M*P + 1 - M + 1 = M*(P-1) + 2 which is the length L=M*P of the
+# filter +1 minus M for anticipating the wind up of the phase rotation buffer
+# plus the additional 1 to move off the zero-th cycle.
+#
+# And so now since it is just M*P+1 + 1 to get the h0x0 term on the output
+# (which is just the dealy of the sum path in the PE drawings -- including the
+# phasse roation) I am back to not really "needing" to know exactly when samples
+# come out other.
+#
+# Because all I am doing is just moving past ospfb outputs that have time
+# samples less than zero until all greater than zero and comparing that with the
+# sink.
+#
+# So I am back at wanting to know when I want to compare samples again but only
+# because I am wanting to check all  my answers....
+#
+# And therefore this is the question, do I leave as is, or figure it out.
+#
+# By the way, this implies I do want a valid signal that starts the phase
+# rotation buffer.
+#
+# But I am really thinking I don't want to care to find a general approach at
+# this moment and just either compare as I can or just keep steping the outputs
+# until I don't find a string with the null '-' char.
