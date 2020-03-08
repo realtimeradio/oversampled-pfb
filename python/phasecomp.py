@@ -1,14 +1,15 @@
 import numpy as np
-from ospfb import ringbuffer
 
-TYPES = (str, 'int16', 'int32', int, float)
+TYPES = (str, 'int16', 'int32', int, float, bool)
 
 TYPES_MAP = {
-  'str'   : np.dtype((np.unicode_, 128)), # max representable is a 128 long string per buffer element
+  # max representable is a 128 long string per buffer element
+  'str'   : np.dtype((np.unicode_, 128)),
   'int16' : np.int16,
   'int32' : np.int32,
   'int'   : int,
-  'float' : float
+  'float' : float,
+  'bool'  : bool
 }
 
 TYPES_INIT = {
@@ -16,10 +17,26 @@ TYPES_INIT = {
   'int16' : 0,
   'int32' : 0,
   'int'   : 0,
-  'float' : 0.0
+  'float' : 0.0,
+  'bool'  : False
 }
 
-class phaseComp:
+  # TODO: The phase compensation operation was not written using the SFG
+  # formulation as was the polyphase FIR. As such there is no PE definition and
+  # there isn't any other data/valid buffers. At this I am wanting to know what
+  # I should add... I am thinking of just implementing the data and valid
+  # buffers out of consistency.
+
+  # in ospfb the class that contains all the buffers is called the PE and then
+  # the OSPFB class steps through each PE and the step function operates on all
+  # the PEs. Should I rename and change the approach?
+
+  # Also, do we really need a valid buffer? For sure we do not need it in the
+  # same way we do for the polyphase FIR because after the latency of the FIR
+  # then every sample will be valid. In addition the data are not needed becuase
+  # when we get to hooking this up to the FFT there is no where in the Xilinx
+  # FFT to do something with the data.
+class PhaseComp:
   """
   Phase compensation operation for the oversampled polyphase FIR
 
@@ -28,7 +45,7 @@ class phaseComp:
   kernel for the M-Pt FFT
   """
 
-  def __init__(self, M=8, D=6, dt='str'):
+  def __init__(self, M=8, D=6, dt='str', keepHistory=False):
     # container data type
     self.dt = dt
 
@@ -42,13 +59,23 @@ class phaseComp:
     self.stateIdx = 0
 
     # ping pong buffer
+    # TODO: how long does the data/valid buffers need to be? M sounds about
+    # right because there is an M latency before the buffer is first filled and
+    # after that
     self.pp = ppbuf(length=self.M, dt=dt)
+    self.databuf = ppbuf(length=self.M, dt=dt)
+    self.validbuf = ppbuf(length=self.M, dt='bool')
 
     # meta data
     self.modCounter = 0
     self.cycle = 0
 
-  def step(self, din):
+    #self.keepHistory = keepHistory
+    #self.sumhist = None
+    #self.dbhist = None
+    #self.validhist = None
+
+  def step(self, din, sin, vin):
     """
     Single cycle transaction of the phase compensation operation
 
@@ -57,9 +84,16 @@ class phaseComp:
     the correct order.
     """
 
+    # sout "sum out" is left over from the PFB need to think about how the
+    # variable name should change here. But for now keeping sout to be the
+    # output of the operation just to be consistent.
+    sout = TYPES_INIT[self.dt]
     dout = TYPES_INIT[self.dt]
+    vout = TYPES_INIT['bool']
 
-    dout = self.pp.step(din)
+    sout = self.pp.step(sin)# the sums are what we really want phase rotated
+    dout = self.databuf.step(din)
+    vout = self.validbuf.step(vin)
 
     # Is the seperate class really the structure I want to pursue?
     # What I am worried about is imposing too many step-by-step assumptions that
@@ -74,14 +108,84 @@ class phaseComp:
       if self.pp.setA:
         self.pp.stkB.top = self.shifts[self.stateIdx]
         self.pp.stkB.bottom = self.shifts[self.stateIdx]
+
+        self.databuf.stkB.top = self.shifts[self.stateIdx]
+        self.databuf.stkB.bottom = self.shifts[self.stateIdx]
+
+        self.validbuf.stkB.top = self.shifts[self.stateIdx]
+        self.validbuf.stkB.bottom = self.shifts[self.stateIdx]
+
         self.stateIdx = (self.stateIdx+1) % self.S
       else:
         self.pp.stkA.top = self.shifts[self.stateIdx]
         self.pp.stkA.bottom = self.shifts[self.stateIdx]
+
+        self.databuf.stkA.top = self.shifts[self.stateIdx]
+        self.databuf.stkA.bottom = self.shifts[self.stateIdx]
+
+        self.validbuf.stkA.top = self.shifts[self.stateIdx]
+        self.validbuf.stkA.bottom = self.shifts[self.stateIdx]
+
         self.stateIdx = (self.stateIdx+1) % self.S
 
     self.cycle += 1
-    return dout
+
+    #if self.keepHistory:
+    #  self.updateHistory()
+
+    return (dout, sout, vout)
+
+    # sout is the rotation out that used to be dout but renamed to
+    # be consistent with the OSPFB implementation
+    #return dout
+
+  ## TODO: should the history functions be in phase comp or ppbuf?
+  #def updateHistory(self):
+  #  a = np.reshape(self.pp.stkA.buf, (self.M,1))
+  #  b = np.reshape(self.pp.stkB.buf, (self.M,1))
+  #  ab = np.concatenate((a,b), axis=1)
+
+  #  if self.sumhist is None:
+  #    self.sumhist = ab
+  #  else:
+  #    self.sumhist = np.concatenate((self.sumhist,ab), axis=1)
+
+  #  #if self.dbhist is None:
+
+  #  #else:
+
+  #  #if self.validhist is None:
+
+  #  #else:
+
+  #def formatHistory(self,  dbfmt, sumfmt, validfmt):
+  #  if self.sumhist is None:
+  #    print("No history has been accumulated... returning...")
+  #    return ""
+
+  #  strhist = ""
+
+  #  for i in range(0, self.M): # stack A and B put together
+  #    for j in range(0, self.cycle):
+  #      for k in range(0, 2):
+  #        kid = 2*j + k
+  #        strhist += sumfmt.format(self.sumhist[i,kid])
+
+  #  return strhist
+
+  def print(self):
+    s = ""
+    s += "Rotation pp buf:\n"
+    s += "{}\n".format(self.pp)
+    s += "Data pp buf:\n"
+    s += "{}\n".format(self.databuf)
+    s += "Valid pp buf:\n"
+    s += "{}\n".format(self.validbuf)
+
+    return s
+
+  def __repr__(self):
+    return self.print()
 
 
 class ppbuf:
@@ -89,7 +193,6 @@ class ppbuf:
   A generic ping pong buffer data structure implementation
   """
   def __init__(self, length=8, dt='str'):
-
     self.length = length
 
     # ping pong buffer control
@@ -140,6 +243,17 @@ class ppbuf:
 
     self.cycle += 1
     return dout
+
+  def __repr__(self):
+    return self.print()
+
+  def print(self):
+    s = ""
+    s += "setA: {}\n".format(self.setA)
+    s += "A: {}\n".format(self.stkA)
+    s += "B: {}\n".format(self.stkB)
+    return s
+
 
 class stack:
   """
@@ -266,11 +380,11 @@ if __name__ == "__main__":
   ppstr = ppbuf(length=M, dt='str')
   ppint16 = ppbuf(length=M, dt='int16')
   srcint = source(init=M, dt='int', srctype='counter')
-  pcint = phaseComp(M=M, D=D, dt='int')
+  pcint = PhaseComp(M=M, D=D, dt='int')
 
   # create string symbolic objects and run simulation
   src = source(init=M)
-  pc = phaseComp(M=M, D=D)
+  pc = PhaseComp(M=M, D=D)
   fftin = []
 
   while pc.modCounter < 12:
@@ -282,6 +396,6 @@ if __name__ == "__main__":
       print("**********************************************************************\n")
       fftin = []
 
-    out = pc.step(nextsamp)
+    out = pc.step(nextsamp, nextsamp, True)
     fftin.append(out)
 
