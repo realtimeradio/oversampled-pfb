@@ -1,6 +1,6 @@
 import numpy as np
 
-TYPES = (str, 'int16', 'int32', int, float, bool)
+TYPES = (str, 'int16', 'int32', int, float, 'complex128', bool)
 
 TYPES_MAP = {
   # max representable is a 128 long string per buffer element
@@ -9,6 +9,7 @@ TYPES_MAP = {
   'int32' : np.int32,
   'int'   : int,
   'float' : float,
+  'cx'    : np.complex128,
   'bool'  : bool
 }
 
@@ -18,6 +19,7 @@ TYPES_INIT = {
   'int32' : 0,
   'int'   : 0,
   'float' : 0.0,
+  'cx'    : 0+0*1j,
   'bool'  : False
 }
 
@@ -265,7 +267,7 @@ class stack:
     self.full = False
     self.empty = True
     # don't need the +1 because the wrap around helps
-    self.length = length # +1 potentially need to  add a dummy space to help at top
+    self.length = length # +1 potentially need to add a dummy space to help at top
 
     self.buf = np.full(length, TYPES_INIT[dt], dtype=TYPES_MAP[dt])
     #self.buf = np.zeros(length, self.dt)
@@ -322,53 +324,6 @@ class stack:
     s += "\n{}".format(self.buf)
     return s
 
-# I know I want a simulation source but I am not sure I am liking exactly how
-# this one is turning out. It should work for now, but it should be more object
-# oriented and inhert base and then just implement genSample or something like
-# that.
-class source:
-  """
-  Simulation source for generating samples
-  """
-  def __init__(self, init=8, dt='str', srctype=None): # general M
-    self.dt = dt
-    self.srctype = srctype
-    self.M = init
-    self.curval = init-1 # general M-1
-    # decimated time index? will have to change something to get it to start at
-    # zero
-    self.i = 1
-    self.modtimer = 0
-
-    if self.dt is not 'str' and self.srctype is None:
-      print("Error: A numeric datatype is expected to have a srctype")
-      print("Error: Not exiting, but things will break...")
-
-  def genSample(self):
-
-    dout = None
-    # working on other source value generation
-    if self.dt == 'str':
-      # samples are generated newest to oldest as they would be out of the
-      # polyphase FIR branches (port M-1 up to port 0)
-      val = self.i*M - self.modtimer - 1
-      dout = "x{}".format(val)
-    else:
-      if self.srctype == 'counter':
-        dout = (self.i-1)*M + self.modtimer
-        # apply the following for a counter that would count like the string
-        # version above (newest to oldest samples)
-        #dout = self.i*M - self.modtimer - 1
-      elif self.srctype == 'sine':
-        # TODO: need to implement -- include noise
-        dout = 1
-
-    # update meta data on number of cycles ran
-    self.modtimer = (self.modtimer+1) % self.M
-    self.i = self.i+1 if self.modtimer == 0 else self.i 
-
-    return dout
-  
 
 if __name__ == "__main__":
   print("OSPFB phase compensation implementation")
