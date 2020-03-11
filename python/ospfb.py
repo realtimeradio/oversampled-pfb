@@ -1,7 +1,9 @@
 import sys
 import numpy as np
 
+from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
 from phasecomp import PhaseComp
+from source import (ToneSource, SymSource)
 
 def minTuple(t):
   m = (0,0)
@@ -22,7 +24,7 @@ class OSPFB:
     the design methodolgy.
   """
 
-  def __init__(self, M, D, P, initval, followHistory=False):
+  def __init__(self, M, D, P, initval, dt='str', followHistory=False):
     """
       M - Polyphase branches (Transform size)
 
@@ -115,6 +117,10 @@ class OSPFB:
       working on figuring that out.
 
     """
+    # containers data type
+    self.dt = dt
+
+    # os pfb parameters
     self.M = M
     self.D = D
     self.P = P
@@ -128,44 +134,65 @@ class OSPFB:
     self.run = False
 
     # initialize prototype LPF
-    self.taps = ['h{}'.format(i) for i in range(0, self.L)]
+    #TODO: correct tap generation
+    #self.taps = ['h{}'.format(i) for i in range(0, self.L)]
+    #self.taps = np.ones(self.L)
+    tmpid = np.arange(-self.P/2*self.osratio, self.osratio*self.P/2, 1/self.D)
+    tmpx = np.sinc(tmpid)
+    hann = np.hanning(self.L)
+    h = tmpx*hann
+    self.taps = h
 
     # initialize PEs elements
     self.PEs = [pe(idx=1, M=M, D=D,
                     taps=self.taps[M-1::-1],
+                    dt=dt,
                     keepHistory=self.followHistory)]
 
     self.PEs += [pe(idx=i, M=M, D=D,
                      taps=self.taps[i*M-1:(i-1)*M-1:-1],
+                     dt=dt,
                      keepHistory = self.followHistory) \
                  for i in range(2, (P+1))]
 
     # initialize phase compensation block
     self.pc = PhaseComp(M=self.M, D=self.D,
-                        dt='str',
+                        dt=dt,
                         keepHistory=self.followHistory)
+
+    self.strfmt = "T={{{:s}}} in:({{{:s}}}, {{}}), out:({{{:s}}}, {{{:s}}}, {{}})"
+    self.strfmt = self.strfmt.format(":<3d", TYPES_STR_FMT[self.dt], TYPES_STR_FMT[self.dt], TYPES_STR_FMT[self.dt])
 
   def enable(self):
     self.run = (not self.run)
     print("PFB is {}".format("running" if self.run else "stopped"))
 
-  def step(self):
+
+  def step(self, din):
+    """
+    working on connecting the ospfb with a source instead of generating its own
+    value. So I am thinking the idea will be to have this implement a handshake
+    that returns T when data is accepted and F otherwise. The source would act
+    accordingly.
+    """
     if not self.run:
       print("PFB not enabled...returning")
       return
 
-    self.cycle += 1
     vnext = self.valid()
-    if vnext=="False":
-      dnext = "*"
+    if vnext==False:
+      if self.dt=='str':
+        dnext = "*"
+      else:
+        dnext = -1
     else:
-      dnext = "x{}".format(self.iterval)
-      self.iterval += 1
+      dnext = din
 
+    self.cycle += 1
     self.modtimer = (self.modtimer+1) % self.M
     peout, firout = self.runPEs(dnext, vnext)
-    print("T={:<3d} in:({:<4s}, {:<5s}), out:({:<4s}, {}, {})".format(self.cycle, dnext, vnext,
-                                                  peout[0], peout[1], peout[2]))
+
+    print(self.strfmt.format(self.cycle, dnext, vnext, peout[0], peout[1], peout[2]))
 
     return (peout, firout)
 
@@ -174,7 +201,8 @@ class OSPFB:
     peout = ()
     for (i, pe) in enumerate(self.PEs):
       if i==0:
-        peout = pe.step(din, '0', vin)
+        # The first PE has a default zero value on the sum in line
+        peout = pe.step(din, TYPES_INIT[self.dt], vin)
       else:
         peout = pe.step(peout[0], peout[1], peout[2])
 
@@ -190,7 +218,7 @@ class OSPFB:
     return (peout, firout)
 
   def valid(self):
-    return "True" if self.modtimer < self.D else "False"
+    return True if self.modtimer < self.D else False
 
   def getHistory(self, dumpf=False):
     strhist = ""
@@ -231,16 +259,16 @@ class OSPFB:
 
 
 class pe:
-  def __init__(self, idx, M, D, taps, keepHistory=False):
+  def __init__(self, idx, M, D, taps, dt='str', keepHistory=False):
     self.idx = idx 
     self.M = M
     self.D = D
     self.taps = None
     self.keepHistory = keepHistory
-    self.sumbuf   = ringbuffer(length=M)
-    self.delaybuf = ringbuffer(length=(M-D))
-    self.databuf  = ringbuffer(length=2*M)
-    self.validbuf = ringbuffer(length=2*M, load=["False" for i in range(0,2*M)])
+    self.sumbuf   = ringbuffer(length=M, dt=dt)
+    self.delaybuf = ringbuffer(length=(M-D), dt=dt)
+    self.databuf  = ringbuffer(length=2*M, dt=dt)
+    self.validbuf = ringbuffer(length=2*M, load=["False" for i in range(0,2*M)], dt=dt)
 
     self.cycle = 0
 
@@ -249,27 +277,31 @@ class pe:
     self.delayhist = None
     self.validhist = None
 
+    # containers data type
+    self.dt = dt
+
     if len(taps) != M: 
       print("PE: Init error number of taps not correct")
     else:
-      self.taps = ringbuffer(length=M, load=taps)
+      self.taps = ringbuffer(length=M, load=taps, dt=dt)
       self.taps.head = M-1
       self.taps.tail = M-1
 
   def step(self, din, sin, vin):
     # default values
     self.cycle += 1
-    d = "-"
-    vout = "False"
-    sout = "-"
-    dout = "-"
+
+    d = TYPES_INIT[self.dt]
+    vout = TYPES_INIT['bool']
+    sout = TYPES_INIT[self.dt]
+    dout = TYPES_INIT[self.dt]
 
 ######## TESTING NEW CONTROL/DATAFLOW #########
 # Re-writing the control this way yields the same
 # result as previous control flow
 #
 #    dbuf = self.delaybuf.buf[self.delaybuf.head] # has to be here since we need the value before it is overwritten
-#    if vin=="True":
+#    if vin==True:
 #      d = din
 #      if self.delaybuf.full:
 #        self.delaybuf.war(din)
@@ -300,9 +332,9 @@ class pe:
 ############ PREV CONTROL/DATAFLOW #############
 
     # deterimine if data to use is from in our loopback delay buffer
-    if self.delaybuf.full and (vin=="True"):
+    if self.delaybuf.full and (vin==True):
       d = self.delaybuf.war(din)
-    elif vin=="True":
+    elif vin==True:
       self.delaybuf.write(din)
     else:
       din = self.delaybuf.buf[self.delaybuf.head]
@@ -337,10 +369,16 @@ class pe:
     return (dout, sout, vout)
 
   def MAC(self, sin, din, coeff):
-    if sin == "0":
-      s = ('{}{}').format(coeff, din)
+
+    s = TYPES_INIT[self.dt]
+
+    if self.dt == 'str':
+      if sin == "0":
+        s = ('{}{}').format(coeff, din)
+      else:
+        s = ('{} + ' + '{}{}').format(sin, coeff, din)
     else:
-      s = ('{} + ' + '{}{}').format(sin, coeff, din)
+      s = sin + coeff*din
 
     return s
 
@@ -447,20 +485,15 @@ class pe:
 
 
 class ringbuffer:
-  # max representable is a 128 long string per buffer element
-  dt = np.dtype((np.unicode_, 128)) 
 
-  def __init__(self, length=16, load=None):
+  def __init__(self, length=16, load=None, dt='str'):
     self.head = 0
     self.tail = 0
     self.full = False
     self.empty = True
     self.length = length
 
-    self.buf = np.zeros(length, self.dt)
-    # will need a generic empty data generator depending on the data type so
-    # that switching between symbolic and numeric modes works
-    self.buf = ["-" for i in range(0, self.length)]
+    self.buf = np.full(length, TYPES_INIT[dt], dtype=TYPES_MAP[dt])
 
     if load is not None:
       if len(load) == length:
@@ -702,15 +735,19 @@ def computeLatency(P, M, D):
 
 
 if __name__ == "__main__":
+  import matplotlib.pyplot as plt
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
 
+  # simulation data type
+  SIM_DT = 'cx'
+
   # OS PFB parameters
-  M = 32; D = 24; P = 8;
+  M = 1024; D = 768; P = 8;
 
   # example ring buffer initialization
   rb = ringbuffer(8)
 
-  # manual tap and pe instantiation
+  # example manual tap and pe instantiation
   taps = ['h{}'.format(i) for i in range(0,M*P)]
   pe1 = pe(idx=1, M=M, D=D, taps=taps[(M-1)::-1])
   pe2 = pe(idx=2, M=M, D=D, taps=taps[(2*M-1):(M-1):-1])
@@ -718,9 +755,23 @@ if __name__ == "__main__":
   # It does not make sense to talk about samples other than '0' with an FIR
   # but this is left for verification with arbitrary values.
   initval = 0
-  ospfb = OSPFB(M=M, D=D, P=P, initval=initval, followHistory=False)
+  ospfb = OSPFB(M=M, D=D, P=P, initval=initval, dt=SIM_DT, followHistory=False)
   ospfb.enable()
   s = sink(M=M, D=D, P=P, init=None, order='natural')
+
+  # initialize data generator
+  if SIM_DT is not 'str':
+    fs = 10e3
+    NFFT = M
+    flist = [2000, 3000, 4000, 6000, 8000]
+    ntones = len(flist)
+
+    src = ToneSource(M, sigpowdb=1, fs=fs, ntones=4, freqlist=flist)
+    #dout = np.zeros(M, dtype=TYPES_MAP[SIM_DT]
+    dout = [] # not as fast and more memory intesive but a little simpler for now
+    ospfb_data = None # again, not fast or efficient but works for now
+  else:
+    src = SymSource(M, order='natural')
 
   # start stepping sink with ospfb inst. But will need to then step several
   # cycles forward because all the output isn't present. I wonder if it is worth
@@ -728,106 +779,71 @@ if __name__ == "__main__":
   # are in place... instead of all blanks initially.
   Tvalid = M*P+2
   cycleValid = computeLatency(P, M ,D) #+ s.shifts[s.stateidx]
-  Tend = 100000
+  Tend = 20000
 
+  din = TYPES_INIT[SIM_DT] # init din incase ospfb.valid() not ready
   # need to advance the ospfb before stepping the sink
   for i in range(0, Tvalid-1):
-    peout, pe_firout = ospfb.step()
+
+    # handshake on ospfb indicates a new sample will be accepted
+    # otherwise din will keep the previous value generated
+    if ospfb.valid():
+      din = src.genSample()
+
+    peout, pe_firout = ospfb.step(din)
 
   for i in range(0, Tend):
-    peout, _ = ospfb.step()
-    _, sink_rotout, _ = s.step()
+    if ospfb.valid():
+      din = src.genSample()
 
-    # retrieve just the sum form both the filter and sink
-    rot = peout[1]
-    sink_rotout = sink_rotout.split(" = ")[2]
+    peout, _ = ospfb.step(din)
 
-    # with symbolic filter outputs the filter state is not initialized. The
-    # filter is instead full of null values ('-'). We therefore cannot compare
-    # the full sink value with the PFB output. Instead we can trim the filter
-    # output and just compare what we do have.
-    nid = rot.find('-')
-    if (nid) >= 0:
-      nplus = rot.find('+')
-      if nid < nplus : # a null '-' appears before the first '+' (i.e., in the first tap)
-        #print("skipping check, empty first tap")
-        continue
+    if SIM_DT is not 'str':
+      if len(dout) != M:
+        dout.append(peout[1])
+      else:
+        # a frame is ready, time to fire the ifft
+        x = np.asarray(dout)
+        X = np.fft.ifft(x, NFFT).reshape(NFFT,1)
+        if ospfb_data is None:
+          ospfb_data = X
+        else:
+          ospfb_data = np.concatenate((ospfb_data, X), axis=1)
 
-      # form a shortened version of the filter output that can be compared with
-      # the sink value
-      sub = rot[0:nid]
-      rot = sub.rpartition(' + ')[0]
+        dout = [] # reset dout list
+    else:
+      _, sink_rotout, _ = s.step()
 
-    if (sink_rotout.find(rot) != 0):
-      print("symbolic sim failed!")
-      print(sink_rotout)
-      print(rot)
-      sys.exit()
+      # retrieve just the sum form both the filter and sink
+      rot = peout[1]
+      sink_rotout = sink_rotout.split(" = ")[2]
 
+      # with symbolic filter outputs the filter state is not initialized. The
+      # filter is instead full of null values ('-'). We therefore cannot compare
+      # the full sink value with the PFB output. Instead we can trim the filter
+      # output and just compare what we do have.
+      nid = rot.find('-')
+      if (nid) >= 0:
+        nplus = rot.find('+')
+        if nid < nplus : # a null '-' appears before the first '+' (i.e., in the first tap)
+          #print("skipping check, empty first tap")
+          continue
 
-  #for i in range(0, 100):
-  #  peout, pe_firout = ospfb.step()
-  #  (sink_firout, sink_rotout, debugout) = s.step()
-  #  firsplit = sink_firout.split(" = ")
-  #  rotsplit = sink_rotout.split(" = ")
-  #  #if not (firsplit[1] == pe_firout):
-  #  #  print("Polyphase FIR outputs did not match expected")
-  #  if not (rotsplit[2] == peout[1]):
-  #    print("Phase rotation outputs did not match expected")
+        # form a shortened version of the filter output that can be compared with
+        # the sink value
+        sub = rot[0:nid]
+        rot = sub.rpartition(' + ')[0]
 
-  #s = sink(M=M, D=D, P=P, init=initval, order='natural')
+      if (sink_rotout.find(rot) != 0):
+        print("symbolic sim failed!")
+        print(sink_rotout)
+        print(rot)
+        sys.exit()
 
-  #cycleValid = computeLatency(P, M ,D) #+ s.shifts[s.stateidx]
+  if SIM_DT is not 'str':
+    df = fs/NFFT
+    fbins = np.arange(0, NFFT)
+    tmp = ospfb_data[:,-1]
+    plt.plot(fbins*df, 20*np.log10(np.abs(tmp)))
+    plt.show()
 
-  #ospfb.enable()
-  #sys.exit()
-  #print("Data will be valid on cycle T={}".format(cycleValid))
-  #for i in range(0,cycleValid):
-  #  peout, pe_firout = ospfb.step()
-  #  if ospfb.cycle >= cycleValid:
-  #    (sink_firout, sink_rotout, debugout) = s.step()
-  #    firsplit = sink_firout.split(" = ")
-  #    rotsplit = sink_rotout.split(" = ")
-  #    if not (firsplit[1] == pe_firout):
-  #      print("Polyphase FIR outputs did not match expected")
-  #    if not (rotsplit[2] == peout[1]):
-  #      print("Phase rotation outputs did not match expected")
-
-
-# NOTE
-# I have two time approaches that I am needing to rationalize. For almost the
-# entire time I was developing this ospfb architecture wanting to make sure I
-# knew when the first sample (relly the x0 sample) was in the last tap on the
-# output.
-#
-# I thought through the process to get build the sink that could compute it and
-# then I derived the latency computation AND compensation due to the delay line
-# that would allow me to line up the polyphase FIR components and know exactly
-# when that initial sample showed up in the last tap.
-#
-# Now working on the phase compensation to think about it I realized that
-# starting the phase compensation core was independent of D and that any M, P
-# pair you waited M*P + 1 - M + 1 = M*(P-1) + 2 which is the length L=M*P of the
-# filter +1 minus M for anticipating the wind up of the phase rotation buffer
-# plus the additional 1 to move off the zero-th cycle.
-#
-# And so now since it is just M*P+1 + 1 to get the h0x0 term on the output
-# (which is just the dealy of the sum path in the PE drawings -- including the
-# phasse roation) I am back to not really "needing" to know exactly when samples
-# come out other.
-#
-# Because all I am doing is just moving past ospfb outputs that have time
-# samples less than zero until all greater than zero and comparing that with the
-# sink.
-#
-# So I am back at wanting to know when I want to compare samples again but only
-# because I am wanting to check all  my answers....
-#
-# And therefore this is the question, do I leave as is, or figure it out.
-#
-# By the way, this implies I do want a valid signal that starts the phase
-# rotation buffer.
-#
-# But I am really thinking I don't want to care to find a general approach at
-# this moment and just either compare as I can or just keep steping the outputs
-# until I don't find a string with the null '-' char.

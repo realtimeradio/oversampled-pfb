@@ -74,6 +74,11 @@ class SymSource(Source):
     self.order = order
 
   def __createSample__(self):
+    # TODO: The initial os pfb class allowed for an initval variable that would
+    # set the first samples into the pfb. This was an artifact of my hand drawn
+    # DG/SFG formulation that would use x-11 or x1 or x0 as the first input
+    # sample. If I want that behaviour again I think I will need to include that
+    # here instead. Since the OSPFB now doesn't generate its own samples.
 
     # natural order delivers samples in ascending order x0, x1, ..., etc.
     # processing order is newest to oldest, port x_M-1 down to x0, x_(2*M-1)
