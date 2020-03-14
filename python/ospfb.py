@@ -134,13 +134,15 @@ class OSPFB:
     self.run = False
 
     # initialize prototype LPF
-    #TODO: correct tap generation
-    #self.taps = ['h{}'.format(i) for i in range(0, self.L)]
-    #self.taps = np.ones(self.L)
-    tmpid = np.arange(-self.P/2*self.osratio, self.osratio*self.P/2, 1/self.D)
-    tmpx = np.sinc(tmpid)
-    hann = np.hanning(self.L)
-    h = tmpx*hann
+    if self.dt == "str":
+      h = ['h{}'.format(i) for i in range(0, self.L)]
+    else:
+      #h = np.ones(self.L)
+      tmpid = np.arange(-self.P/2*self.osratio, self.osratio*self.P/2, 1/self.D)
+      tmpx = np.sinc(tmpid)
+      hann = np.hanning(self.L)
+      h = tmpx*hann
+
     self.taps = h
 
     # initialize PEs elements
@@ -169,12 +171,6 @@ class OSPFB:
 
 
   def step(self, din):
-    """
-    working on connecting the ospfb with a source instead of generating its own
-    value. So I am thinking the idea will be to have this implement a handshake
-    that returns T when data is accepted and F otherwise. The source would act
-    accordingly.
-    """
     if not self.run:
       print("PFB not enabled...returning")
       return
@@ -370,10 +366,8 @@ class pe:
 
   def MAC(self, sin, din, coeff):
 
-    s = TYPES_INIT[self.dt]
-
     if self.dt == 'str':
-      if sin == "0":
+      if sin == "-": # was previously "0" as this is really what is input
         s = ('{}{}').format(coeff, din)
       else:
         s = ('{} + ' + '{}{}').format(sin, coeff, din)
@@ -739,10 +733,10 @@ if __name__ == "__main__":
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
 
   # simulation data type
-  SIM_DT = 'cx'
+  SIM_DT = 'str'
 
   # OS PFB parameters
-  M = 1024; D = 768; P = 8;
+  M = 32; D = 24; P = 8;
 
   # example ring buffer initialization
   rb = ringbuffer(8)
@@ -763,10 +757,10 @@ if __name__ == "__main__":
   if SIM_DT is not 'str':
     fs = 10e3
     NFFT = M
-    flist = [2000, 3000, 4000, 6000, 8000]
+    flist = []#[2000] #[2000, 3000, 4000, 6000, 8000]
     ntones = len(flist)
 
-    src = ToneSource(M, sigpowdb=1, fs=fs, ntones=4, freqlist=flist)
+    src = ToneSource(M, sigpowdb=3, fs=fs, ntones=4, freqlist=flist)
     #dout = np.zeros(M, dtype=TYPES_MAP[SIM_DT]
     dout = [] # not as fast and more memory intesive but a little simpler for now
     ospfb_data = None # again, not fast or efficient but works for now
@@ -779,7 +773,7 @@ if __name__ == "__main__":
   # are in place... instead of all blanks initially.
   Tvalid = M*P+2
   cycleValid = computeLatency(P, M ,D) #+ s.shifts[s.stateidx]
-  Tend = 20000
+  Tend = 400
 
   din = TYPES_INIT[SIM_DT] # init din incase ospfb.valid() not ready
   # need to advance the ospfb before stepping the sink
@@ -840,10 +834,75 @@ if __name__ == "__main__":
         print(rot)
         sys.exit()
 
+  # Evaluation and second stage fft for numeric simulations
   if SIM_DT is not 'str':
+    # plot the most recent output of the OSPFB
     df = fs/NFFT
     fbins = np.arange(0, NFFT)
     tmp = ospfb_data[:,-1]
     plt.plot(fbins*df, 20*np.log10(np.abs(tmp)))
     plt.show()
 
+    # second fine stage PFB looking for scalloping and aliasing (simplified as
+    # just an FFT for now)
+    # Must generate enough output windows for a second stage
+    NFFT_FINE = 512
+    N_FINE_CHANNELS = D*NFFT_FINE
+    hsov = (M-D)*NFFT_FINE//(2*M)
+    fs_os = fs/D
+    if (ospfb_data.shape[1] < NFFT_FINE):
+      print("Not enough output windows for a second stage NFFT_FINE=", NFFT_FINE)
+      sys.exit()
+    fineoutputmat = np.fft.fftshift(
+                  np.fft.fft(ospfb_data[:-(NFFT_FINE+1):-1],NFFT_FINE, axis=1))/NFFT_FINE
+
+    fineOutputPruned = fineoutputmat[:,(hsov-1):-(hsov+1)]
+    fineSpectrum = fineOutputPruned.reshape(N_FINE_CHANNELS)
+
+    # plot fine spectrum
+    fshift = -(NFFT_FINE/2-hsov+1)
+    fbins_fine = np.arange(0, N_FINE_CHANNELS) + fshift
+    faxis_fine = fbins_fine*fs_os/NFFT_FINE
+
+    plt.plot(faxis_fine, 20*np.log10(np.abs(fineSpectrum)))
+    plt.grid()
+    plt.show()
+
+
+# NOTE
+# I have two time approaches that I am needing to rationalize. For almost the
+# entire time I was developing this ospfb architecture wanting to make sure I
+# knew when the first sample (relly the x0 sample) was in the last tap on the
+# output.
+#
+# I thought through the process to get build the sink that could compute it and
+# then I derived the latency computation AND compensation due to the delay line
+# that would allow me to line up the polyphase FIR components and know exactly
+# when that initial sample showed up in the last tap.
+#
+# Now working on the phase compensation to think about it I realized that
+# starting the phase compensation core was independent of D and that any M, P
+# pair you waited M*P + 1 - M + 1 = M*(P-1) + 2 which is the length L=M*P of the
+# filter +1 minus M for anticipating the wind up of the phase rotation buffer
+# plus the additional 1 to move off the zero-th cycle.
+#
+# And so now since it is just M*P+1 + 1 to get the h0x0 term on the output
+# (which is just the dealy of the sum path in the PE drawings -- including the
+# phasse roation) I am back to not really "needing" to know exactly when samples
+# come out other.
+#
+# Because all I am doing is just moving past ospfb outputs that have time
+# samples less than zero until all greater than zero and comparing that with the
+# sink.
+#
+# So I am back at wanting to know when I want to compare samples again but only
+# because I am wanting to check all  my answers....
+#
+# And therefore this is the question, do I leave as is, or figure it out.
+#
+# By the way, this implies I do want a valid signal that starts the phase
+# rotation buffer.
+#
+# But I am really thinking I don't want to care to find a general approach at
+# this moment and just either compare as I can or just keep steping the outputs
+# until I don't find a string with the null '-' char.
