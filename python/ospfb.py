@@ -733,7 +733,7 @@ if __name__ == "__main__":
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
 
   # simulation data type
-  SIM_DT = 'str'
+  SIM_DT = 'cx'
 
   # OS PFB parameters
   M = 32; D = 24; P = 8;
@@ -757,26 +757,26 @@ if __name__ == "__main__":
   if SIM_DT is not 'str':
     fs = 10e3
     NFFT = M
-    flist = []#[2000] #[2000, 3000, 4000, 6000, 8000]
+    NFFT_FINE = 512
+    flist = [3000] #[2000, 3000, 4000, 6000, 8000]
     ntones = len(flist)
 
     src = ToneSource(M, sigpowdb=3, fs=fs, ntones=4, freqlist=flist)
     #dout = np.zeros(M, dtype=TYPES_MAP[SIM_DT]
     dout = [] # not as fast and more memory intesive but a little simpler for now
-    ospfb_data = None # again, not fast or efficient but works for now
+    ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
+    fi = 0 # ospfb_data output idx counter
   else:
     src = SymSource(M, order='natural')
 
-  # start stepping sink with ospfb inst. But will need to then step several
-  # cycles forward because all the output isn't present. I wonder if it is worth
-  # it to think about how to initialize the hardware such that the right values
-  # are in place... instead of all blanks initially.
   Tvalid = M*P+2
-  cycleValid = computeLatency(P, M ,D) #+ s.shifts[s.stateidx]
-  Tend = 400
+  cycleValid = computeLatency(P, M ,D)
+  Tend = 34000
 
   din = TYPES_INIT[SIM_DT] # init din incase ospfb.valid() not ready
   # need to advance the ospfb before stepping the sink
+  # why the -1? I remember it has to do with Tvalid having +2 but would it make
+  # more sense to instead have Tvalid at +1?
   for i in range(0, Tvalid-1):
 
     # handshake on ospfb indicates a new sample will be accepted
@@ -793,18 +793,16 @@ if __name__ == "__main__":
     peout, _ = ospfb.step(din)
 
     if SIM_DT is not 'str':
-      if len(dout) != M:
-        dout.append(peout[1])
-      else:
-        # a frame is ready, time to fire the ifft
+      # need to append each run but check but need to make sure an ifft shouldnt
+      # fire first
+      if len(dout) == M:
         x = np.asarray(dout)
-        X = np.fft.ifft(x, NFFT).reshape(NFFT,1)
-        if ospfb_data is None:
-          ospfb_data = X
-        else:
-          ospfb_data = np.concatenate((ospfb_data, X), axis=1)
+        ospfb_data[:, fi] = np.fft.ifft(x, NFFT)
+        fi += 1
+        dout = [] # reset dout
 
-        dout = [] # reset dout list
+      dout.append(peout[1])
+        
     else:
       _, sink_rotout, _ = s.step()
 
@@ -833,41 +831,47 @@ if __name__ == "__main__":
         print(sink_rotout)
         print(rot)
         sys.exit()
+ 
+    # Evaluation and second stage fft for numeric simulations
+    if SIM_DT is not 'str':
 
-  # Evaluation and second stage fft for numeric simulations
-  if SIM_DT is not 'str':
-    # plot the most recent output of the OSPFB
-    df = fs/NFFT
-    fbins = np.arange(0, NFFT)
-    tmp = ospfb_data[:,-1]
-    plt.plot(fbins*df, 20*np.log10(np.abs(tmp)))
-    plt.show()
+      # if we want to check for NFFT_FINE -1 might want to move fi++ to end of
+      # loop instead of right after ifft computation
+      if (fi==NFFT_FINE): # we have enough outputs to comute a fine spectrum
+        # plot the most recent output of the OSPFB
+        df = fs/NFFT
+        fbins = np.arange(0, NFFT)
+        tmp = ospfb_data[:,-1]
+        plt.plot(fbins*df, 20*np.log10(np.abs(tmp)))
+        plt.show()
 
-    # second fine stage PFB looking for scalloping and aliasing (simplified as
-    # just an FFT for now)
-    # Must generate enough output windows for a second stage
-    NFFT_FINE = 512
-    N_FINE_CHANNELS = D*NFFT_FINE
-    hsov = (M-D)*NFFT_FINE//(2*M)
-    fs_os = fs/D
-    if (ospfb_data.shape[1] < NFFT_FINE):
-      print("Not enough output windows for a second stage NFFT_FINE=", NFFT_FINE)
-      sys.exit()
-    fineoutputmat = np.fft.fftshift(
-                  np.fft.fft(ospfb_data[:-(NFFT_FINE+1):-1],NFFT_FINE, axis=1))/NFFT_FINE
+        # second fine stage PFB looking for scalloping and aliasing (simplified as
+        # just an FFT for now)
+        # Must generate enough output windows for a second stage
+        N_FINE_CHANNELS = D*NFFT_FINE
+        hsov = (M-D)*NFFT_FINE//(2*M)
+        fs_os = fs/D
+        if (ospfb_data.shape[1] < NFFT_FINE):
+          print("Not enough output windows for a second stage NFFT_FINE=", NFFT_FINE)
+          sys.exit()
+        fineoutputmat = np.fft.fftshift(
+                      np.fft.fft(ospfb_data[:-(NFFT_FINE+1):-1],NFFT_FINE, axis=1))/NFFT_FINE
 
-    fineOutputPruned = fineoutputmat[:,(hsov-1):-(hsov+1)]
-    fineSpectrum = fineOutputPruned.reshape(N_FINE_CHANNELS)
+        fineOutputPruned = fineoutputmat[:,(hsov-1):-(hsov+1)]
+        fineSpectrum = fineOutputPruned.reshape(N_FINE_CHANNELS)
 
-    # plot fine spectrum
-    fshift = -(NFFT_FINE/2-hsov+1)
-    fbins_fine = np.arange(0, N_FINE_CHANNELS) + fshift
-    faxis_fine = fbins_fine*fs_os/NFFT_FINE
+        # plot fine spectrum
+        fshift = -(NFFT_FINE/2-hsov+1)
+        fbins_fine = np.arange(0, N_FINE_CHANNELS) + fshift
+        faxis_fine = fbins_fine*fs_os/NFFT_FINE
 
-    plt.plot(faxis_fine, 20*np.log10(np.abs(fineSpectrum)))
-    plt.grid()
-    plt.show()
+        plt.plot(faxis_fine, 20*np.log10(np.abs(fineSpectrum)))
+        plt.grid()
+        plt.show()
 
+        # clear ospfb_data and reset fi
+        ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
+        fi = 0
 
 # NOTE
 # I have two time approaches that I am needing to rationalize. For almost the
