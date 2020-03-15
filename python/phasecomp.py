@@ -34,8 +34,11 @@ class PhaseComp:
     # which is the reduced form of M/D
     self.M = M
     self.D = D
-    self.S = M//np.gcd(self.M, self.D) 
-    self.shifts = [s*D % M for s in range(0, self.S)]
+    self.S = M//np.gcd(self.M, self.D)
+    #WHY?!?!?!?! This bit me once before in HLS, but why??? Why does it need
+    # to be ascending???? Doesn't the equation in the Tuthill paper do
+    # differently? Do I not understand the right shift direction???
+    self.shifts = [-(s*D) % M for s in range(0, self.S)]
     self.stateIdx = 0
 
     # ping pong buffer
@@ -240,6 +243,7 @@ class stack:
   Stack data structure
   """
   def __init__(self, length=8, dt='str'):
+    self.dt = dt
     self.top = 0
     self.bottom = 0
     self.full = False
@@ -252,6 +256,11 @@ class stack:
     # will need a generic empty data generator depending on the data type so
     # that switching between symbolic and numeric modes works
     #self.buf = ["-" for i in range(0, self.length)]
+
+  def reset(self):
+    self.buf = np.full(self.length, TYPES_INIT[self.dt], dtype=TYPES_MAP[self.dt])
+    self.full = False
+    self.empty = True
 
   def read(self):
     """

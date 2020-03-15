@@ -2,7 +2,7 @@ import sys
 import numpy as np
 
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
-from phasecomp import PhaseComp
+from phasecomp import (PhaseComp, stack)
 from source import (ToneSource, SymSource)
 
 def minTuple(t):
@@ -562,7 +562,7 @@ class sink:
 
     # phase rotation compensation states
     self.S = M//np.gcd(self.M, self.D)
-    self.shifts = [s*D % M for s in range(0, self.S)]
+    self.shifts = [-(s*D) % M for s in range(0, self.S)]
 
     # output processing order
     # reversed - processing order (port M-1 down to zero, newest to oldest)
@@ -730,13 +730,19 @@ def computeLatency(P, M, D):
 
 if __name__ == "__main__":
   import matplotlib.pyplot as plt
+  from numpy.fft import (fft, ifft, fftshift)
+  from numpy import (log10, abs, min, max)
   print("**** Software OS PFB Symbolic Hardware Calculation ****")
 
   # simulation data type
   SIM_DT = 'cx'
 
   # OS PFB parameters
-  M = 32; D = 24; P = 8;
+  M = 32 ; D = 24; P = 8;
+  NFFT = M
+
+  # second stage parameters
+  NFFT_FINE = 512
 
   # example ring buffer initialization
   rb = ringbuffer(8)
@@ -753,30 +759,32 @@ if __name__ == "__main__":
   ospfb.enable()
   s = sink(M=M, D=D, P=P, init=None, order='natural')
 
+  # output stack
+  dout = stack(length=M, dt=SIM_DT)
+  # collection of output frames
+  ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
+  fi = 0 # ospfb_data output idx counter
+
   # initialize data generator
   if SIM_DT is not 'str':
     fs = 10e3
-    NFFT = M
-    NFFT_FINE = 512
-    flist = [3000] #[2000, 3000, 4000, 6000, 8000]
+    flist = [2200, 3050, 4125,5000, 6561, 8333]
     ntones = len(flist)
 
-    src = ToneSource(M, sigpowdb=3, fs=fs, ntones=4, freqlist=flist)
-    #dout = np.zeros(M, dtype=TYPES_MAP[SIM_DT]
-    dout = [] # not as fast and more memory intesive but a little simpler for now
-    ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
-    fi = 0 # ospfb_data output idx counter
+    src = ToneSource(M, sigpowdb=-3, fs=fs, ntones=ntones, freqlist=flist)
   else:
     src = SymSource(M, order='natural')
 
   Tvalid = M*P+2
   cycleValid = computeLatency(P, M ,D)
-  Tend = 34000
+  Tend = 33000
 
   din = TYPES_INIT[SIM_DT] # init din incase ospfb.valid() not ready
   # need to advance the ospfb before stepping the sink
   # why the -1? I remember it has to do with Tvalid having +2 but would it make
   # more sense to instead have Tvalid at +1?
+  # I did verify that this is the correct sequence that we want for collecting
+  # the output it lines the frames up into the FFT buffer correctly.
   for i in range(0, Tvalid-1):
 
     # handshake on ospfb indicates a new sample will be accepted
@@ -792,18 +800,20 @@ if __name__ == "__main__":
 
     peout, _ = ospfb.step(din)
 
-    if SIM_DT is not 'str':
-      # need to append each run but check but need to make sure an ifft shouldnt
-      # fire first
-      if len(dout) == M:
-        x = np.asarray(dout)
-        ospfb_data[:, fi] = np.fft.ifft(x, NFFT)
-        fi += 1
-        dout = [] # reset dout
+    # need to append each run but need to make sure an ifft shouldn't fire first
+    if dout.full:
+      x = dout.buf
+      if SIM_DT is not 'str':
+        ospfb_data[:, fi] = ifft(x, NFFT)
+      else:
+        ospfb_data[:, fi] = x
+      fi += 1
+      dout.reset()
 
-      dout.append(peout[1])
-        
-    else:
+    dout.write(peout[1])
+
+    # with symbolic outputs we can check individual output steps
+    if SIM_DT is 'str':
       _, sink_rotout, _ = s.step()
 
       # retrieve just the sum form both the filter and sink
@@ -834,7 +844,6 @@ if __name__ == "__main__":
  
     # Evaluation and second stage fft for numeric simulations
     if SIM_DT is not 'str':
-
       # if we want to check for NFFT_FINE -1 might want to move fi++ to end of
       # loop instead of right after ifft computation
       if (fi==NFFT_FINE): # we have enough outputs to comute a fine spectrum
@@ -842,7 +851,7 @@ if __name__ == "__main__":
         df = fs/NFFT
         fbins = np.arange(0, NFFT)
         tmp = ospfb_data[:,-1]
-        plt.plot(fbins*df, 20*np.log10(np.abs(tmp)))
+        plt.plot(fbins*df, 20*log10(abs(tmp)))
         plt.show()
 
         # second fine stage PFB looking for scalloping and aliasing (simplified as
@@ -854,11 +863,38 @@ if __name__ == "__main__":
         if (ospfb_data.shape[1] < NFFT_FINE):
           print("Not enough output windows for a second stage NFFT_FINE=", NFFT_FINE)
           sys.exit()
-        fineoutputmat = np.fft.fftshift(
-                      np.fft.fft(ospfb_data[:-(NFFT_FINE+1):-1],NFFT_FINE, axis=1))/NFFT_FINE
+        fineoutputmat = fftshift(fft(ospfb_data, NFFT_FINE, axis=1), axes=(1,))/NFFT_FINE
 
         fineOutputPruned = fineoutputmat[:,(hsov-1):-(hsov+1)]
         fineSpectrum = fineOutputPruned.reshape(N_FINE_CHANNELS)
+
+        PLT_INV_SPEC=True
+        if PLT_INV_SPEC:
+          fig, ax = plt.subplots(4,8, sharey='row')
+          for i in range(0,4):
+            for j in range(0,8):
+              k = (i*8)+j
+              # this shift corrects for overlap between adjacent bins
+              bin_shift = - ((NFFT_FINE//2) + k*2*hsov)
+
+              subbins = np.arange(k*NFFT_FINE, (k+1)*NFFT_FINE) + bin_shift
+              cur_ax = ax[i,j]
+              cur_ax.plot(subbins*fs_os/NFFT_FINE, 20*log10(abs(fineoutputmat[k, :])))
+              cur_ax.set_xlim(min(subbins*fs_os/NFFT_FINE), max(subbins*fs_os/NFFT_FINE))
+              cur_ax.grid(True)
+          plt.show()
+
+          fig, ax = plt.subplots(4,8, sharey='row')
+          for i in range(0,4):
+            for j in range(0,8):
+              k = (i*8)+j
+              # this shift corrects for overlap between adjacent bins
+              fbins_corrected = np.arange((k-1/2)*(NFFT_FINE-2*hsov),(k+1/2)*(NFFT_FINE-2*hsov))
+              cur_ax = ax[i,j]
+              cur_ax.plot(fbins_corrected*fs_os/NFFT_FINE, 20*log10(abs(fineOutputPruned[k, :])))
+              cur_ax.set_xlim(min(fbins_corrected*fs_os/NFFT_FINE), max(fbins_corrected*fs_os/NFFT_FINE))
+              cur_ax.grid(True)
+          plt.show()
 
         # plot fine spectrum
         fshift = -(NFFT_FINE/2-hsov+1)
