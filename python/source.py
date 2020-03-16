@@ -2,6 +2,8 @@ import numpy as np
 from numpy import random
 from numpy import fft
 
+from scipy import signal
+
 class Source(object):
   """
   Simulation source for generating samples
@@ -24,6 +26,25 @@ class Source(object):
 
   def __createSample__(self):
     pass
+
+class BlueNoise(Source):
+  def __init__(self, M=8, powdb=1):
+    super().__init__(M)
+    self.powdb = powdb
+    self.pow = 10**(powdb/10)
+    self.length=1024
+
+    self.h = fft.ifft(fft.fftshift(np.sqrt(np.linspace(1,3,self.length))))
+    self.zi = np.zeros(self.length-1)
+
+
+  def __createSample__(self):
+
+    xw = np.sqrt(self.pow/2)*(random.randn() + 1j*random.randn())
+
+    dout, self.zi = signal.lfilter(self.h, 1, [xw], zi=self.zi)
+
+    return dout
 
 class ToneSource(Source):
   def __init__(self, M=8, fs=2048, sigpowdb=10, noisepowdb=1, ntones=1, freqlist=[1000]):
@@ -95,24 +116,39 @@ class SymSource(Source):
 if __name__=="__main__":
   import matplotlib.pyplot as plt
 
+  NBLK = 100
   M=1024
   NFFT = M
   flist = [2000, 4000, 6000, 8000]
   ntones = len(flist)
   fs = 10e3
  
-  src = ToneSource(M, fs=fs, ntones=4, freqlist=flist)
+  #src = ToneSource(M, fs=fs, ntones=4, freqlist=flist)
+  src = BlueNoise(M, powdb=0)
 
   x = np.zeros(NFFT,dtype=np.complex128)
-  for i in range(0, NFFT):
-    x[i] = src.genSample()
+  X = np.zeros((M,NBLK), dtype=np.complex128)
+  for k in range(0, NBLK):
+    for i in range(0, NFFT):
+      x[i] = src.genSample()
+    X[:,k] = fft.fft(x, NFFT)
 
-  X = fft.fft(x, NFFT)
+  Sxx = np.abs(X)**2
+
+  Sxxhat = np.mean(Sxx, axis=1)
 
   fbins = np.arange(0,NFFT)
   df = fs/NFFT
 
-  plt.plot(fbins*df, 20*np.log10(np.abs(X)))
+  plt.plot(fbins*df, 20*np.log10(np.abs(X[:,99])))
+  plt.ylim([-60, 60])
+  plt.grid()
+  plt.show()
+
+  Sxx = np.mean(X, axis=1)
+  plt.plot(fbins*df, 10*np.log10(Sxxhat))
+  plt.ylim([-60,60])
+  plt.grid()
   plt.show()
 
   
