@@ -9,6 +9,7 @@ def golden(x, h, yi, M, D, decmod, dt=np.complex128):
 
   L = int(np.ceil((M-decmod)/D))
   Y = np.zeros((M,L), dtype=dt)
+  n = np.arange(0, M)
 
   for k in range(0, M):
     # mix down
@@ -25,7 +26,7 @@ def golden(x, h, yi, M, D, decmod, dt=np.complex128):
 
   decmod = (D-M+decmod) % D
 
-  return (Y, yi, decmod)
+  return (Y, yi, L, decmod)
 
 def pltfine(FineSpectrumMat, fs, NFFT_FINE, M, D):
   fs_os = fs/D
@@ -103,23 +104,11 @@ if __name__=="__main__":
       #xh = crandn(M)
       #xh, zi = signal.lfilter(blueNoise, 1, x, zi=zi)
 
-      for k in range(0, M):
-        # mix down
-        argmix = (-1j*2*np.pi*k*n)/M
-        xmix = xh*np.exp(argmix)
+      (Ydec, yi, ndec, decmod) = golden(xh, h, yi, M, D, decmod)
 
-        # low pass filter
-        ymix, yi[k,:] = signal.lfilter(h, 1, xmix, zi=yi[k,:])
-
-        # decimate
-        ydec = ymix[decmod:-1:D]
-
-        # store result
-        ed = st + len(ydec)
-        X[k,st:ed] = ydec
-
+      ed = st + ndec
+      X[:, st:ed] = Ydec
       st = ed
-      decmod = (D-M+decmod) % D
 
     # compute a the fine spectrum output along with the corrected with
     # oversample regions discarded

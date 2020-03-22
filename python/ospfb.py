@@ -4,6 +4,7 @@ import numpy as np
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
 from phasecomp import (PhaseComp, stack)
 from source import (ToneSource, SymSource)
+from goldenmodel import golden
 
 def minTuple(t):
   m = (0,0)
@@ -133,11 +134,11 @@ class OSPFB:
     self.cycle = 0
     self.run = False
 
+    # TODO: allow for tap initialization
     # initialize prototype LPF
     if self.dt == "str":
       h = ['h{}'.format(i) for i in range(0, self.L)]
     else:
-      #h = np.ones(self.L)
       tmpid = np.arange(-self.P/2*self.osratio, self.osratio*self.P/2, 1/self.D)
       tmpx = np.sinc(tmpid)
       hann = np.hanning(self.L)
@@ -592,7 +593,6 @@ class sink:
           m = (mprime + rs) % self.M # TODO: verify this solution is true in general...
           print("sol: n={}, mprime={}, s={}, rs={}, m={}".format(n, mprime, s, rs,m))
           self.l.append((n, m))
-          #self.l.append((int(self.num(m)/self.D), m))
 
       #self.startbranch = min(self.l, key=minTuple)
       self.startbranch = max(self.l, key=maxTuple)
@@ -738,7 +738,7 @@ if __name__ == "__main__":
   SIM_DT = 'cx'
 
   # OS PFB parameters
-  M = 32 ; D = 24; P = 8;
+  M = 32; D = 24; P = 8;
   NFFT = M
 
   # second stage parameters
@@ -765,6 +765,25 @@ if __name__ == "__main__":
   ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
   fi = 0 # ospfb_data output idx counter
 
+  # TODO: What is the best way to catch and process generated samples by the
+  # golden model.
+  # Right now the approach is that the best thing to do is to just start
+  # catching samples while the OPSB is sequentially pulling samples out of the
+  # FIR model and computing FFT frames. Then when the time comes to compute a
+  # fine frame the correct number of raw generated samples will have been
+  # produced to just compute the golden model across the entire block of data.
+  # NOTE that this approach takes advantage of what I believe to have shown that
+  # the first for loop ends when the first real valid frame of output data from
+  # the FIR is arriving. Meaning that we will be lined up from the begninng on
+  # comparing the correct sequence of input samples with the correct OSPFB
+  # output frames
+  golden_in = []
+
+  FINE_FRAMES = 10
+  frameidx = 0
+  GfMat = np.zeros((D*NFFT_FINE, FINE_FRAMES), dtype=np.complex128)
+  fineSpectrumMat = np.zeros((D*NFFT_FINE, FINE_FRAMES), dtype=np.complex128)
+
   # initialize data generator
   if SIM_DT is not 'str':
     fs = 10e3
@@ -777,7 +796,7 @@ if __name__ == "__main__":
 
   Tvalid = M*P+2
   cycleValid = computeLatency(P, M ,D)
-  Tend = 33000
+  Tend = 16500
 
   din = TYPES_INIT[SIM_DT] # init din incase ospfb.valid() not ready
   # need to advance the ospfb before stepping the sink
@@ -786,17 +805,20 @@ if __name__ == "__main__":
   # I did verify that this is the correct sequence that we want for collecting
   # the output it lines the frames up into the FFT buffer correctly.
   for i in range(0, Tvalid-1):
-
     # handshake on ospfb indicates a new sample will be accepted
     # otherwise din will keep the previous value generated
     if ospfb.valid():
       din = src.genSample()
+      golden_in.append(din)
 
     peout, pe_firout = ospfb.step(din)
 
-  for i in range(0, Tend):
+  #sys.exit()
+  while frameidx < FINE_FRAMES:
+  #for i in range(0, Tend):
     if ospfb.valid():
       din = src.genSample()
+      golden_in.append(din)
 
     peout, _ = ospfb.step(din)
 
@@ -804,7 +826,7 @@ if __name__ == "__main__":
     if dout.full:
       x = dout.buf
       if SIM_DT is not 'str':
-        ospfb_data[:, fi] = ifft(x, NFFT)
+        ospfb_data[:, fi] = ifft(x, NFFT)*NFFT
       else:
         ospfb_data[:, fi] = x
       fi += 1
@@ -841,18 +863,18 @@ if __name__ == "__main__":
         print(sink_rotout)
         print(rot)
         sys.exit()
- 
+
     # Evaluation and second stage fft for numeric simulations
     if SIM_DT is not 'str':
       # if we want to check for NFFT_FINE -1 might want to move fi++ to end of
       # loop instead of right after ifft computation
       if (fi==NFFT_FINE): # we have enough outputs to comute a fine spectrum
         # plot the most recent output of the OSPFB
-        df = fs/NFFT
-        fbins = np.arange(0, NFFT)
-        tmp = ospfb_data[:,-1]
-        plt.plot(fbins*df, 20*log10(abs(tmp)))
-        plt.show()
+        #df = fs/NFFT
+        #fbins = np.arange(0, NFFT)
+        #tmp = ospfb_data[:,-1]
+        #plt.plot(fbins*df, 20*log10(abs(tmp)))
+        #plt.show()
 
         # second fine stage PFB looking for scalloping and aliasing (simplified as
         # just an FFT for now)
@@ -867,8 +889,36 @@ if __name__ == "__main__":
 
         fineOutputPruned = fineoutputmat[:,(hsov-1):-(hsov+1)]
         fineSpectrum = fineOutputPruned.reshape(N_FINE_CHANNELS)
+        fineSpectrumMat[:, frameidx] = fineSpectrum
 
-        PLT_INV_SPEC=True
+        # GOLDEN MODEL CALCULATION
+        # all this time we have been collecting the input samples to process
+        # against the golden model
+        st = 0
+        ed = 0
+        GX = np.zeros((NFFT, NFFT_FINE), dtype=np.complex128)
+        mm = 0
+        decmod = 0
+        gi = np.zeros((M, M*P-1), dtype=np.complex128)
+
+        while ed < NFFT_FINE:
+          gx = np.array(golden_in[0:M])
+          del golden_in[0:M]
+          #gx = np.asarray(golden_in[mm*M:(mm+1)*M])
+          mm += 1
+          (Gdec, gi, ndec, decmod) = golden(gx, ospfb.taps, gi, M, D, decmod)
+
+          ed = st + ndec
+          GX[:, st:ed] = Gdec
+          st = ed
+
+        Gfine = fftshift(fft(GX, NFFT_FINE, axis=1), axes=(1,))/NFFT_FINE
+        Gfinepruned = Gfine[:, (hsov-1):-(hsov+1)]
+        Gf = Gfinepruned.reshape(N_FINE_CHANNELS)
+        GfMat[:, frameidx] = Gf
+        frameidx += 1
+
+        PLT_INV_SPEC=False
         if PLT_INV_SPEC:
           fig, ax = plt.subplots(4,8, sharey='row')
           for i in range(0,4):
@@ -901,13 +951,28 @@ if __name__ == "__main__":
         fbins_fine = np.arange(0, N_FINE_CHANNELS) + fshift
         faxis_fine = fbins_fine*fs_os/NFFT_FINE
 
-        plt.plot(faxis_fine, 20*np.log10(np.abs(fineSpectrum)))
-        plt.grid()
-        plt.show()
+        #plt.plot(faxis_fine, 20*np.log10(np.abs(fineSpectrum)))
+        #plt.plot(faxis_fine, 20*np.log10(np.abs(Gf)))
+        #plt.grid()
+        #plt.show()
 
         # clear ospfb_data and reset fi
         ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
         fi = 0
+
+  if frameidx==FINE_FRAMES:
+    Sxx_model = np.mean(np.real(fineSpectrumMat*np.conj(fineSpectrumMat)), 1)
+    Sxx_golden = np.mean(np.real(GfMat*np.conj(GfMat)), 1)
+
+
+    plt.plot(faxis_fine, 10*np.log10(Sxx_model))
+    plt.plot(faxis_fine, 10*np.log10(Sxx_golden))
+    plt.ylim([-20, 70])
+    plt.grid()
+    plt.show()
+
+
+
 
 # NOTE
 # I have two time approaches that I am needing to rationalize. For almost the
