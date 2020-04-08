@@ -23,3 +23,5 @@ work/
 history.txt
 __pycache__/
 *.swp
+
+.DS_Store

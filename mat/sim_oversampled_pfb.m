@@ -111,15 +111,15 @@ channel_bins = Nfft-hsov*2; % channels reamining after discarding overlapped reg
 full_pfb_spectrum = fftshift(fft(pfb_output(:, offset:Nfft+offset), Nfft, 2), 2)/Nfft; % apply the fft across the matrix
 pfb_spectrum = full_pfb_spectrum(:, hsov:end-hsov-1);
 
-% for m = 1:M
-%   figure(2);
-%   subplot(4,8,m);
-%   fbins_corrected = ((m-1)-1/2)*(Nfft-2*hsov):((m-1)+1/2)*(Nfft-2*hsov)-1;
-%   f_corrected = fbins_corrected*fs_decimated/Nfft;
-%   plot(f_corrected, 20*log10(abs(pfb_spectrum(m,:)))); grid on;
-%   xlim([min(f_corrected), max(f_corrected)]);
-%   ylim([-60, 20]);
-% end
+for m = 1:M
+  figure(2);
+  subplot(4,8,m);
+  fbins_corrected = ((m-1)-1/2)*(Nfft-2*hsov):((m-1)+1/2)*(Nfft-2*hsov)-1;
+  f_corrected = fbins_corrected*fs_decimated/Nfft;
+  plot(f_corrected, 20*log10(abs(pfb_spectrum(m,:)))); grid on;
+  xlim([min(f_corrected), max(f_corrected)]);
+  ylim([-60, 20]);
+end
 
 figure(11);
 os_pfb_stitch = reshape(pfb_spectrum.', [1, (Nfft-2*hsov)*M]);
