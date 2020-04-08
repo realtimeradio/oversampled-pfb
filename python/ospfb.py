@@ -2,6 +2,10 @@ import sys
 import numpy as np
 
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
+from utils import pltOSPFBChannels
+from utils import pltCoarseSpectrum
+from utils import pltCompareFine
+from utils import pltCompareSxx
 from phasecomp import (PhaseComp, stack)
 from source import (ToneSource, SymSource)
 from goldenmodel import golden
@@ -765,21 +769,9 @@ if __name__ == "__main__":
   ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
   fi = 0 # ospfb_data output idx counter
 
-  # TODO: What is the best way to catch and process generated samples by the
-  # golden model.
-  # Right now the approach is that the best thing to do is to just start
-  # catching samples while the OPSB is sequentially pulling samples out of the
-  # FIR model and computing FFT frames. Then when the time comes to compute a
-  # fine frame the correct number of raw generated samples will have been
-  # produced to just compute the golden model across the entire block of data.
-  # NOTE that this approach takes advantage of what I believe to have shown that
-  # the first for loop ends when the first real valid frame of output data from
-  # the FIR is arriving. Meaning that we will be lined up from the begninng on
-  # comparing the correct sequence of input samples with the correct OSPFB
-  # output frames
   golden_in = []
 
-  FINE_FRAMES = 10
+  FINE_FRAMES = 2
   frameidx = 0
   GfMat = np.zeros((D*NFFT_FINE, FINE_FRAMES), dtype=np.complex128)
   fineSpectrumMat = np.zeros((D*NFFT_FINE, FINE_FRAMES), dtype=np.complex128)
@@ -798,24 +790,25 @@ if __name__ == "__main__":
   cycleValid = computeLatency(P, M ,D)
   Tend = 16500
 
-  din = TYPES_INIT[SIM_DT] # init din incase ospfb.valid() not ready
-  # need to advance the ospfb before stepping the sink
+
   # why the -1? I remember it has to do with Tvalid having +2 but would it make
   # more sense to instead have Tvalid at +1?
   # I did verify that this is the correct sequence that we want for collecting
   # the output it lines the frames up into the FFT buffer correctly.
+
+  # Need to advance the ospfb before stepping the sink
+  din = TYPES_INIT[SIM_DT] # init din in case ospfb.valid() not ready
   for i in range(0, Tvalid-1):
-    # handshake on ospfb indicates a new sample will be accepted
-    # otherwise din will keep the previous value generated
+    # Imitate hardware-like AXIS handshake
+    # The OS PFB indicates a new sample will be accepted otherwise din will keep
+    # the previous value generated
     if ospfb.valid():
       din = src.genSample()
       golden_in.append(din)
 
     peout, pe_firout = ospfb.step(din)
 
-  #sys.exit()
   while frameidx < FINE_FRAMES:
-  #for i in range(0, Tend):
     if ospfb.valid():
       din = src.genSample()
       golden_in.append(din)
@@ -834,34 +827,34 @@ if __name__ == "__main__":
 
     dout.write(peout[1])
 
-    # with symbolic outputs we can check individual output steps
+    # check individual output steps when processing symbolic data
     if SIM_DT is 'str':
       _, sink_rotout, _ = s.step()
 
-      # retrieve just the sum form both the filter and sink
+      # get just the sum from both the ospfb and sink outputs
       rot = peout[1]
       sink_rotout = sink_rotout.split(" = ")[2]
 
-      # with symbolic filter outputs the filter state is not initialized. The
-      # filter is instead full of null values ('-'). We therefore cannot compare
-      # the full sink value with the PFB output. Instead we can trim the filter
-      # output and just compare what we do have.
+      # In symbolic processing the filter state is not initialized. Instead, the
+      # filter continues to operate filling results with "null" values ('-')
+      # until a valid symbolic value is available.  We therefore cannot compare
+      # sink and ospfb outputs until the filter state is populated.
+      # Instead what we do is trim the filter output and compare what is ready.
       nid = rot.find('-')
       if (nid) >= 0:
         nplus = rot.find('+')
-        if nid < nplus : # a null '-' appears before the first '+' (i.e., in the first tap)
-          #print("skipping check, empty first tap")
+        # nothing to check if a null appears in the first tap (before the first '+')
+        if nid < nplus :
           continue
 
-        # form a shortened version of the filter output that can be compared with
-        # the sink value
+        # trim for a shortened filter output we can compare against
         sub = rot[0:nid]
         rot = sub.rpartition(' + ')[0]
 
       if (sink_rotout.find(rot) != 0):
-        print("symbolic sim failed!")
-        print(sink_rotout)
-        print(rot)
+        print("Symbolic simulation FAILED!")
+        print("expected:", sink_rotout)
+        print("computed:", rot)
         sys.exit()
 
     # Evaluation and second stage fft for numeric simulations
@@ -869,13 +862,6 @@ if __name__ == "__main__":
       # if we want to check for NFFT_FINE -1 might want to move fi++ to end of
       # loop instead of right after ifft computation
       if (fi==NFFT_FINE): # we have enough outputs to comute a fine spectrum
-        # plot the most recent output of the OSPFB
-        #df = fs/NFFT
-        #fbins = np.arange(0, NFFT)
-        #tmp = ospfb_data[:,-1]
-        #plt.plot(fbins*df, 20*log10(abs(tmp)))
-        #plt.show()
-
         # second fine stage PFB looking for scalloping and aliasing (simplified as
         # just an FFT for now)
         # Must generate enough output windows for a second stage
@@ -892,8 +878,6 @@ if __name__ == "__main__":
         fineSpectrumMat[:, frameidx] = fineSpectrum
 
         # GOLDEN MODEL CALCULATION
-        # all this time we have been collecting the input samples to process
-        # against the golden model
         st = 0
         ed = 0
         GX = np.zeros((NFFT, NFFT_FINE), dtype=np.complex128)
@@ -902,10 +886,11 @@ if __name__ == "__main__":
         gi = np.zeros((M, M*P-1), dtype=np.complex128)
 
         while ed < NFFT_FINE:
+          #print("mm=", mm)
+          #mm += 1
+
           gx = np.array(golden_in[0:M])
           del golden_in[0:M]
-          #gx = np.asarray(golden_in[mm*M:(mm+1)*M])
-          mm += 1
           (Gdec, gi, ndec, decmod) = golden(gx, ospfb.taps, gi, M, D, decmod)
 
           ed = st + ndec
@@ -918,96 +903,24 @@ if __name__ == "__main__":
         GfMat[:, frameidx] = Gf
         frameidx += 1
 
-        PLT_INV_SPEC=False
-        if PLT_INV_SPEC:
-          fig, ax = plt.subplots(4,8, sharey='row')
-          for i in range(0,4):
-            for j in range(0,8):
-              k = (i*8)+j
-              # this shift corrects for overlap between adjacent bins
-              bin_shift = - ((NFFT_FINE//2) + k*2*hsov)
-
-              subbins = np.arange(k*NFFT_FINE, (k+1)*NFFT_FINE) + bin_shift
-              cur_ax = ax[i,j]
-              cur_ax.plot(subbins*fs_os/NFFT_FINE, 20*log10(abs(fineoutputmat[k, :])))
-              cur_ax.set_xlim(min(subbins*fs_os/NFFT_FINE), max(subbins*fs_os/NFFT_FINE))
-              cur_ax.grid(True)
-          plt.show()
-
-          fig, ax = plt.subplots(4,8, sharey='row')
-          for i in range(0,4):
-            for j in range(0,8):
-              k = (i*8)+j
-              # this shift corrects for overlap between adjacent bins
-              fbins_corrected = np.arange((k-1/2)*(NFFT_FINE-2*hsov),(k+1/2)*(NFFT_FINE-2*hsov))
-              cur_ax = ax[i,j]
-              cur_ax.plot(fbins_corrected*fs_os/NFFT_FINE, 20*log10(abs(fineOutputPruned[k, :])))
-              cur_ax.set_xlim(min(fbins_corrected*fs_os/NFFT_FINE), max(fbins_corrected*fs_os/NFFT_FINE))
-              cur_ax.grid(True)
-          plt.show()
-
-        # plot fine spectrum
-        fshift = -(NFFT_FINE/2-hsov+1)
-        fbins_fine = np.arange(0, N_FINE_CHANNELS) + fshift
-        faxis_fine = fbins_fine*fs_os/NFFT_FINE
-
-        #plt.plot(faxis_fine, 20*np.log10(np.abs(fineSpectrum)))
-        #plt.plot(faxis_fine, 20*np.log10(np.abs(Gf)))
-        #plt.grid()
-        #plt.show()
-
         # clear ospfb_data and reset fi
         ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
         fi = 0
 
-  if frameidx==FINE_FRAMES:
-    Sxx_model = np.mean(np.real(fineSpectrumMat*np.conj(fineSpectrumMat)), 1)
-    Sxx_golden = np.mean(np.real(GfMat*np.conj(GfMat)), 1)
+        PLT=False
+        if PLT:
+          # plot the most recent output of the OSPFB
+          pltCoarseSpectrum(ospfb_data[:,-1], fs)
+
+          # plot individual channels from ospfb simulation outputs
+          pltOSPFBChannels(M, 4, 8, fineoutputmat, hsov, fs_os, pruned=False)
+          pltOSPFBChannels(M, 4, 8, fineoutputmat, hsov, fs_os, pruned=True)
+
+          # plot full fine spectrum for ospfb simulation and model
+          pltCompareFine(fineoutputmat, Gfine, N_FINE_CHANNELS, NFFT_FINE, fs_os, hsov)
 
 
-    plt.plot(faxis_fine, 10*np.log10(Sxx_model))
-    plt.plot(faxis_fine, 10*np.log10(Sxx_golden))
-    plt.ylim([-20, 70])
-    plt.grid()
-    plt.show()
+  # plot the PSD estimates comparing the simulated model with the gold standard
+  pltCompareSxx(fineSpectrumMat, GfMat, N_FINE_CHANNELS, NFFT_FINE, fs_os, hsov)
 
-
-
-
-# NOTE
-# I have two time approaches that I am needing to rationalize. For almost the
-# entire time I was developing this ospfb architecture wanting to make sure I
-# knew when the first sample (relly the x0 sample) was in the last tap on the
-# output.
-#
-# I thought through the process to get build the sink that could compute it and
-# then I derived the latency computation AND compensation due to the delay line
-# that would allow me to line up the polyphase FIR components and know exactly
-# when that initial sample showed up in the last tap.
-#
-# Now working on the phase compensation to think about it I realized that
-# starting the phase compensation core was independent of D and that any M, P
-# pair you waited M*P + 1 - M + 1 = M*(P-1) + 2 which is the length L=M*P of the
-# filter +1 minus M for anticipating the wind up of the phase rotation buffer
-# plus the additional 1 to move off the zero-th cycle.
-#
-# And so now since it is just M*P+1 + 1 to get the h0x0 term on the output
-# (which is just the dealy of the sum path in the PE drawings -- including the
-# phasse roation) I am back to not really "needing" to know exactly when samples
-# come out other.
-#
-# Because all I am doing is just moving past ospfb outputs that have time
-# samples less than zero until all greater than zero and comparing that with the
-# sink.
-#
-# So I am back at wanting to know when I want to compare samples again but only
-# because I am wanting to check all  my answers....
-#
-# And therefore this is the question, do I leave as is, or figure it out.
-#
-# By the way, this implies I do want a valid signal that starts the phase
-# rotation buffer.
-#
-# But I am really thinking I don't want to care to find a general approach at
-# this moment and just either compare as I can or just keep steping the outputs
-# until I don't find a string with the null '-' char.
+  print ("SIMULATION COMPLETED SUCCESSFULLY!")
