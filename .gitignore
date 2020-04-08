@@ -18,3 +18,10 @@ exports/
 *.log
 *.jou
 *.str
+
+work/
+history.txt
+__pycache__/
+*.swp
+
+.DS_Store
