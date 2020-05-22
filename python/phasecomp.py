@@ -1,4 +1,5 @@
 import numpy as np
+from source import CounterSource, SymSource
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
 
   # TODO: The phase compensation operation was not written using the SFG
@@ -38,7 +39,8 @@ class PhaseComp:
     #WHY?!?!?!?! This bit me once before in HLS, but why??? Why does it need
     # to be ascending???? Doesn't the equation in the Tuthill paper do
     # differently? Do I not understand the right shift direction???
-    self.shifts = [-(s*D) % M for s in range(0, self.S)]
+    self.shifts = [-(s*D) % M for s in range(0, self.S)] # correct
+    self.shifts = [(s*D) % M for s in range(0, self.S)]  # developed (notes are written with this case and they sink only may work with this)
     self.stateIdx = 0
 
     # ping pong buffer
@@ -249,7 +251,7 @@ class stack:
     self.full = False
     self.empty = True
     # don't need the +1 because the wrap around helps
-    self.length = length # +1 potentially need to add a dummy space to help at top
+    self.length = length # +1 potentially need to add a dummy space (address) to help at top in HDL
 
     self.buf = np.full(length, TYPES_INIT[dt], dtype=TYPES_MAP[dt])
     #self.buf = np.zeros(length, self.dt)
@@ -321,11 +323,11 @@ if __name__ == "__main__":
   # examples creating containers of different types
   ppstr = ppbuf(length=M, dt='str')
   ppint16 = ppbuf(length=M, dt='int16')
-  srcint = source(init=M, dt='int', srctype='counter')
+  srcint = CounterSource(M=M)
   pcint = PhaseComp(M=M, D=D, dt='int')
 
   # create string symbolic objects and run simulation
-  src = source(init=M)
+  src = SymSource(M=M, order="processing")
   pc = PhaseComp(M=M, D=D)
   fftin = []
 
