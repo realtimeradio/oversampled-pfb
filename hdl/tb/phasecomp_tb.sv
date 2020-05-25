@@ -8,6 +8,10 @@
 `define PERIOD 10
 `define WIDTH 16
 
+`define RED "\033\[0;31m"
+`define GRN "\033\[0;32m"
+`define RST "\033\[0m"
+
 module phasecomp_tb();
 
 // simulation signals
@@ -25,7 +29,7 @@ PhaseComp #(
 // 2). are there math packages that offer fft? I remember using sine in the ADC,
 //     should check that one out
 // function and simulation tasks
-function void chkram();
+function automatic void chkram();
   $display("**** RAM contents ****");
   for (int i=0; i < `DEPTH; i++) begin
     $display("\t{Addr: 0x%04X, data: 0x%04X}", i, DUT.ram[i]);
@@ -33,6 +37,15 @@ function void chkram();
   $display("");
 endfunction // chkram
 
+function automatic int mod(input int x, M);
+  if (x < 0)
+    x = x+M;
+  return x % M;
+endfunction
+
+//function automatic int outputTruth(input int n, m, r, M);
+//  return n*M + mod((m-r),M);
+//endfunction
 
 class Source;
   int M, i, modtimer;
@@ -46,13 +59,52 @@ class Source;
 
   // class methods
   function int createSample();
-    dout = i*M - modtimer - 1;
-
+    int dout = i*M - modtimer - 1;
+    // increment meta data
     modtimer = (modtimer + 1) % M;
     i = (modtimer == 0) ? i+1 : i;
     return dout;
   endfunction
-endclass // Source 
+endclass // Source
+
+
+// TODO: I am also doing something wrong because Source and Sink are almost
+// identical... there should be a better way for reuse...
+class Sink;
+  int M, m, n, r, modtimer, NStates;
+  int shiftStates[4]; // TODO: how to get this dynamic and have NStates be the variable
+
+  // constructor
+  function new(int M);
+    this.M = M;
+    n = 0;                              // decimated time sample
+    r = 0;                              // current state index
+    modtimer = 0;                       // right now, a mod counter to keep track AND the branch index
+    NStates = 4;
+    shiftStates = '{0, 6, 4, 2}; // M=8, D=6 phase rotation states
+  endfunction
+
+  // TODO: should we have a check output method or just return a value? i.e.,
+  // outputTruth method?  I am iffy on how we would be expecting branch order on
+  // the output... I had this nailed down at one point but am since confused
+  // again...
+  function int outputTruth();
+    // man... I am really shooting myself in the foot here with these variable
+    // scope issues...  but why should i... isn't it just like python... just
+    // get used to it...
+    int dout = n*M + mod((modtimer-shiftStates[r]), M);
+
+    // increment meta data 
+    modtimer = (modtimer + 1) % M;
+    if (modtimer == 0) begin
+      n = n+1;
+      r = (r+1) % NStates;
+    end
+
+    return dout;
+  endfunction
+
+endclass //Sink
 
 task wait_cycles(input int cycles=1);
   repeat(cycles)
@@ -76,13 +128,18 @@ initial begin
   end
 end
 
+
 // begin simulation
+int truth;
+int errors;
 initial begin
   Source s;
+  Sink   k;
   s = new(`BRANCH);
+  k = new(`BRANCH);
+  errors = 0;
 
   $display("Cycle=%4d: **** Starting PhaseComp test bench ****", simcycles);
-
   // reset circuit
   rst <= 1; din <= s.createSample();
   @(posedge clk);
@@ -90,13 +147,31 @@ initial begin
 
   $display("Cycle=%4d: Finished init, initial ram contents...", simcycles);
   chkram();
+
+  // feed samples to pass wind-up latency. The latency of the phase compensation
+  // should be M (BRANCH)
   $display("Cycle=%4d: {FSM State: %8s}", simcycles, DUT.cs.name);
-  $display("Cycle=%4d: loading samples...", simcycles);
-  for (int i=0; i < 2*`DEPTH; i++) begin
+  $display("Cycle=%4d: Loading %4d samples for initial wind up...", simcycles, `BRANCH);
+  for (int i=0; i < `BRANCH; i++) begin
+    wait_cycles(1);
+    din = s.createSample();
+  end
+
+  // after M (BRANCH) cycles start verifying output
+  $display("Cycle=%4d: beginning to verify results...", simcycles);
+  // TODO: next step... looks like it works up to 2? then 3 and 4 break
+  for (int i=0; i < 4*`DEPTH; i++) begin
     wait_cycles(1);
     #(1ns); // move off edge to monitor
-    $display("Cycle=%4d: Checking ram and output...", simcycles);
-    chkram();
+    truth = k.outputTruth();
+    if (truth != dout) begin
+      errors++;
+      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s", `RED, simcycles, truth, dout, `RST);
+    end else begin
+      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s", `GRN, simcycles, truth, dout, `RST);
+    end
+    //$display("Cycle=%4d: Checking ram and output...", simcycles);
+    //chkram();
     din = s.createSample();
   end
 

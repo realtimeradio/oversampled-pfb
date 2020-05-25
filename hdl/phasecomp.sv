@@ -53,7 +53,7 @@ always_ff @(posedge clk)
   if (rst)
     shiftOffset <= '0;
   else if (incShift)
-    shiftOffset <= shiftOffset-2;//modinc; (M-D)=2 minus for correct, plus was initial development
+    shiftOffset <= shiftOffset-2;//modinc; (M-D)=2 {0,2,4,6} correct, {0,6,4,2} initial development
   else
     shiftOffset <= shiftOffset;
 
