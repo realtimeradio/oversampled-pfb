@@ -32,7 +32,12 @@ PhaseComp #(
 function automatic void chkram();
   $display("**** RAM contents ****");
   for (int i=0; i < `DEPTH; i++) begin
-    $display("\t{Addr: 0x%04X, data: 0x%04X}", i, DUT.ram[i]);
+    if (i==0)
+      $display("A\t{Addr: 0x%04X, data: 0x%04X}<-- bottom", i, DUT.ram[i]);
+    else if (i==8)
+      $display("B\t{Addr: 0x%04X, data: 0x%04X}<-- bottom", i, DUT.ram[i]);
+    else
+      $display("\t{Addr: 0x%04X, data: 0x%04X}", i, DUT.ram[i]);
   end
   $display("");
 endfunction // chkram
@@ -42,6 +47,7 @@ function automatic int mod(input int x, M);
     x = x+M;
   return x % M;
 endfunction
+
 
 //function automatic int outputTruth(input int n, m, r, M);
 //  return n*M + mod((m-r),M);
@@ -53,13 +59,15 @@ class Source;
   // constructor
   function new(int M);
     this.M = M;
-    i = 1;
+    i = 1; // processing order
+    // i = 0; // natural order
     modtimer = 0; 
   endfunction
 
   // class methods
   function int createSample();
-    int dout = i*M - modtimer - 1;
+    int dout = i*M - modtimer - 1; // processing order
+    // int dout = i*M + modtimer; // natural order
     // increment meta data
     modtimer = (modtimer + 1) % M;
     i = (modtimer == 0) ? i+1 : i;
@@ -153,26 +161,31 @@ initial begin
   $display("Cycle=%4d: {FSM State: %8s}", simcycles, DUT.cs.name);
   $display("Cycle=%4d: Loading %4d samples for initial wind up...", simcycles, `BRANCH);
   for (int i=0; i < `BRANCH; i++) begin
+    $display("Cycle=%4d: {State: %8s, din: 0x%04X, cs_wAddr: 0x%04X, cs_rAddr: 0x%04X, shiftOffset=0x%04X, incShift=0b%1b}\n",
+                                simcycles, DUT.cs.name, DUT.din, DUT.cs_wAddr, DUT.cs_rAddr, DUT.shiftOffset, DUT.incShift);
     wait_cycles(1);
     din = s.createSample();
+    #(1ns); // move off edge to monitor
   end
 
   // after M (BRANCH) cycles start verifying output
   $display("Cycle=%4d: beginning to verify results...", simcycles);
-  // TODO: next step... looks like it works up to 2? then 3 and 4 break
-  for (int i=0; i < 4*`DEPTH; i++) begin
+  for (int i=0; i < 20*`DEPTH; i++) begin
+    //$display("Cycle=%4d: {State: %8s, din: 0x%04X, cs_wAddr: 0x%04X, cs_rAddr: 0x%04X, shiftOffset=0x%04X, incShift=0b%1b}\n",
+    //                            simcycles, DUT.cs.name, DUT.din, DUT.cs_wAddr, DUT.cs_rAddr, DUT.shiftOffset, DUT.incShift);
+
     wait_cycles(1);
+    //chkram();
+    din = s.createSample();
     #(1ns); // move off edge to monitor
     truth = k.outputTruth();
     if (truth != dout) begin
       errors++;
-      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s", `RED, simcycles, truth, dout, `RST);
+      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s\n", `RED, simcycles, truth, dout, `RST);
     end else begin
-      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s", `GRN, simcycles, truth, dout, `RST);
+      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s\n", `GRN, simcycles, truth, dout, `RST);
     end
-    //$display("Cycle=%4d: Checking ram and output...", simcycles);
-    //chkram();
-    din = s.createSample();
+
   end
 
   $finish;

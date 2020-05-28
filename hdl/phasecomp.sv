@@ -34,10 +34,16 @@ logic [(WIDTH-1):0] ram[DEPTH];
 
 logic [$clog2(DEPTH)-1:0] cs_wAddr, cs_rAddr;
 logic [$clog2(DEPTH)-1:0] ns_wAddr, ns_rAddr;
-logic wen, ren;   // needs fsm logic
+logic wen, ren;   // asserted in fsm logic
 
-logic incShift;   // needs fsm logic
-logic [(DEPTH/2)-1:0] shiftOffset; // watch out will need logic to wrap it
+// watch out will need logic to wrap the value for other shifts
+// M=8, D=6 r={0,6,4,2} initial development, {0,2,4,6} correct
+logic [$clog2(DEPTH/2)-1:0] shiftOffset;
+logic incShift;   // asserted in fsm logic
+
+logic [$clog2(DEPTH/2)-1:0] tmp_rAddr;
+
+parameter int D = DEPTH;
 
 // simple dual-port RAM inference
 always_ff @(posedge clk)
@@ -51,9 +57,10 @@ always_ff @(posedge clk)
 // shift offset register
 always_ff @(posedge clk)
   if (rst)
-    shiftOffset <= '0;
+    // replication needed to fill a literal with parameterizable width
+    shiftOffset <= 3'd0;
   else if (incShift)
-    shiftOffset <= shiftOffset-2;//modinc; (M-D)=2 {0,2,4,6} correct, {0,6,4,2} initial development
+    shiftOffset <= shiftOffset-3'd2;//modinc; (M-D)=2, hard-coded for now
   else
     shiftOffset <= shiftOffset;
 
@@ -70,7 +77,7 @@ always_ff @(posedge clk)
 // this will be the upper half of the RAM form [M, 2M-1)
 always_ff @(posedge clk)
   if (rst)
-    cs_rAddr <= (DEPTH/2);
+    cs_rAddr <= 4'(DEPTH)-4'b1;
   else if (ren)
     cs_rAddr <= ns_rAddr;
 
@@ -92,6 +99,7 @@ always_comb begin
   incShift = 0;
   wen = 0;
   ren = 0;
+  tmp_rAddr = 0;
 
   if (rst)
     ns = FILLA; // always start by filling A
@@ -100,38 +108,47 @@ always_comb begin
       FILLA: begin
         wen = 1;
         ren = 1;
+        // since we always do a write and and the the RAM is partitioned into
+        // two we can just keep adding 1 and get the roll over into the right region
+        ns_wAddr = cs_wAddr + 4'b1; // we can keep adding 1 as it will roll us into the upper region
 
         if (cs_wAddr == DEPTH/2-1) begin
           ns = FILLB;
           incShift = 1;
-          ns_wAddr = cs_wAddr + 1; // we can keep adding 1 as it will roll us into the upper region
-          ns_rAddr = DEPTH/2 + shiftOffset - 1;
+          tmp_rAddr = shiftOffset - 3'b1;
+          ns_rAddr = tmp_rAddr;
+          //ns_rAddr = shiftOffset - 3'b1; // valid reads for fillb are reads on A address space [0, 7]
+          // shift is 3-bit ns_rAddr is 4-bit, a problem here? -- I really think I am being bit by this again...
+          // because in filling B we are wanting to read out A's address space. But the 3-bit shiftOffset is extended
+          // to 4-bit before subtraction resulting in 4'b1111 instead of 3'b111.
         end else begin
           ns = FILLA;
-          ns_wAddr = cs_wAddr + 1;
           if (cs_rAddr == DEPTH/2)
-            ns_rAddr = DEPTH-1;
+            ns_rAddr = 4'(DEPTH) - 4'b1;
           else
-            ns_rAddr = cs_rAddr-1;
+            ns_rAddr = cs_rAddr - 4'b1;
         end 
       end //FILLA
 
       FILLB: begin
         wen = 1;
         ren = 1;
+        // since we always do a write and and the the RAM is partitioned into
+        // two we can just keep adding 1 and get the roll over into the right region
+        ns_wAddr = cs_wAddr + 4'b1;
 
         if (cs_wAddr == DEPTH-1) begin
           ns = FILLA;
           incShift = 1;
-          ns_wAddr = cs_wAddr + 1;
-          ns_rAddr = shiftOffset - 1;
+          ns_rAddr = 4'(DEPTH/2) + shiftOffset - 4'b1; // valid reads for filla are reads in B address space [8,15]
+          // 4'b1 literal because DEPTH/2 is present, shift will be extended
+          // from 3-bit to 4-bit.
         end else begin
           ns = FILLB;
-          ns_wAddr = cs_wAddr + 1;
           if (cs_rAddr == 0)
-            ns_rAddr = DEPTH/2-1;
+            ns_rAddr = 4'(DEPTH/2) - 4'b1;
           else
-            ns_rAddr = cs_rAddr - 1;
+            ns_rAddr = cs_rAddr - 4'b1;
         end
       end // FILLB
     endcase // case cs
