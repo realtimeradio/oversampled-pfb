@@ -5,6 +5,7 @@ sandbox/
 vivado/
 os_pfb_prj/
 exports/
+.Xil
 
 # matlab
 *.m~
@@ -19,7 +20,12 @@ exports/
 *.jou
 *.str
 
+# questa sim
 work/
+transcript
+vsim.wlf
+
+# misc
 history.txt
 __pycache__/
 *.swp
