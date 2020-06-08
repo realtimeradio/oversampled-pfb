@@ -1,21 +1,68 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+// this is the third testbench... really should invest in writing packages, monitor,
+// interface, drivers, etc so that I can reuse testbenches
 
 parameter PERIOD = 10;
 
-parameter DEPTH = 8;
+// I am not liking SRLEN and DEPTH being thrown around... starting to cause errors
+// and confusion... 
+parameter DEPTH = 16;
+parameter SRLEN = 8; 
 parameter WIDTH = 4;
 
-module shiftreg_tb();
+parameter NUM = 1;
+
+import abstract_cls::*;
+
+module delaybuf_tb();
 
 logic clk, rst, en;
 logic [WIDTH-1:0] din, dout;
 
-PE_ShiftReg #(
+DelayBuf #(
   .DEPTH(DEPTH),
+  .SRLEN(SRLEN),
   .WIDTH(WIDTH)
 ) DUT (.*);
+
+bind SRLShiftReg : DUT.headSR srif #(
+                                .DEPTH(8-1),
+                                .WIDTH(WIDTH)
+                              ) ifsr (.sr(shiftReg), .clk);
+
+bind SRLShiftReg : DUT.gen_delay.sr srif #(
+                            .DEPTH(8),
+                            .WIDTH(WIDTH)
+                           ) ifsr (.sr(shiftReg), .clk);
+
+bind DelayBuf : DUT delaybuf_itf #(
+                            .WIDTH(WIDTH),
+                            .id("1")
+                          ) hrif (.hr(headReg), .clk);
+
+class Monitor;
+  virtual srif #(.DEPTH(SRLEN-1), .WIDTH(WIDTH)) xif;
+  int id;
+
+  function new(virtual srif #(.DEPTH(SRLEN-1), .WIDTH(WIDTH)) xif, int id);
+    this.xif = xif;
+    this.id = id;
+  endfunction
+
+  function void printid();
+    $display("connected! id:%0d", id);
+  endfunction
+
+  task run;
+    fork
+    forever
+      @(xif.cb) $display("sr:  %0d, 0x%08X", id, xif.get_sr());
+    join_none
+  endtask
+    
+endclass // Monitor
 
 class Source;
   int M, i, modtimer;
@@ -55,10 +102,6 @@ initial begin
 end
 
 
-function void puts(int cycles, string s);
-   $display("Cycle=%4d: %s", cycles, s);
-endfunction
-
 int errors;
 
 parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
@@ -72,8 +115,18 @@ string logfmt = $psprintf("Cycle=%s: {en: 0b%s, din: 0x%s, reg: 0x%s, head: 0x%s
 
 initial begin
   Source s;
+  Monitor m1, m2;
+  abs_delaybuf_itf #(.WIDTH(WIDTH)) dbitf;
+  dbitf = DUT.hrif.ifm;
+
   s = new(DEPTH);
+  m1 = new(DUT.headSR.ifsr, 1);
+  m2 = new(DUT.gen_delay.sr.ifsr, 2);
+  dbitf.run; // error here? 
+  m1.run;
+  m2.run; 
   errors = 0;
+  //$display("%s, 0x%07X", dbitf.get_id(), dbitf.get_hr());
 
   $display("Cycle=%4d: **** Starting PE_ShiftReg test bench ****", simcycles);
   // reset circuit
@@ -83,13 +136,13 @@ initial begin
 
   $display("Cycle=%4d: Finished init...", simcycles);
   //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, head: 0x%01X, reg: 0x%07X, dout: 0x%04X}", simcycles, en, din, DUT.headReg, DUT.shiftReg, dout);
-  $display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
+  //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
   for (int i=0; i < 2*DEPTH; i++) begin
     wait_cycles(1);
     din = s.createSample();
     #(1ns); // move off edge to monitor
     //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, reg: 0x%08X, dout: 0x%04X}", simcycles, en, din, DUT.shiftReg, dout);
-    $display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
+    //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
   end
 
   $display("*** Simulation complete: Errors=%4d ***", errors);

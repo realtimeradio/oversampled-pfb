@@ -7,12 +7,26 @@ parameter PERIOD = 10;
 parameter DEPTH = 8;
 parameter WIDTH = 4;
 
+parameter NUM = 2;
+
 module shiftreg_tb();
 
 logic clk, rst, en;
 logic [WIDTH-1:0] din, dout;
 
-PE_ShiftReg #(
+// PE_ShiftReg #(
+//   .DEPTH(DEPTH),
+//   .WIDTH(WIDTH)
+// ) DUT (.*);
+
+// GenShiftReg #(
+//   .NUM(NUM),
+//   .DEPTH(DEPTH),
+//   .WIDTH(WIDTH)
+// ) DUT (.*);
+
+ShiftRegArr #(
+  .NUM(NUM),
   .DEPTH(DEPTH),
   .WIDTH(WIDTH)
 ) DUT (.*);
@@ -76,6 +90,7 @@ initial begin
   errors = 0;
 
   $display("Cycle=%4d: **** Starting PE_ShiftReg test bench ****", simcycles);
+  $display(regfmt,12);
   // reset circuit
   rst <= 1; din <= s.createSample();
   @(posedge clk);
@@ -83,13 +98,22 @@ initial begin
 
   $display("Cycle=%4d: Finished init...", simcycles);
   //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, head: 0x%01X, reg: 0x%07X, dout: 0x%04X}", simcycles, en, din, DUT.headReg, DUT.shiftReg, dout);
-  $display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
-  for (int i=0; i < 2*DEPTH; i++) begin
+  //$display(logfmt, simcycles, en, din, DUT.generate_delayline[1].shiftReg, DUT.headReg, dout);
+  //$display(logfmt, simcycles, en, din, DUT.generate_delayline[2].shiftReg, DUT.headReg, dout);
+  //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
+  for (int i=0; i < NUM-1; i++) begin
+    $display("0x%07X", DUT.pe[i].shiftReg);
+  end
+  for (int i=0; i < 4*DEPTH; i++) begin
     wait_cycles(1);
     din = s.createSample();
     #(1ns); // move off edge to monitor
     //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, reg: 0x%08X, dout: 0x%04X}", simcycles, en, din, DUT.shiftReg, dout);
-    $display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
+    //$display(logfmt, simcycles, en, din, DUT.generate_delayline[1].shiftReg, DUT.headReg, dout);
+    //$display(logfmt, simcycles, en, din, DUT.generate_delayline[2].shiftReg, DUT.headReg, dout);
+    //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
+    $display("0x%07X", DUT.pe[1].shiftReg);
+    $display("0x%07X", DUT.pe[2].shiftReg);
   end
 
   $display("*** Simulation complete: Errors=%4d ***", errors);
