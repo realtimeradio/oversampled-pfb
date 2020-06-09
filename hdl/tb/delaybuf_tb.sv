@@ -21,11 +21,23 @@ module delaybuf_tb();
 logic clk, rst, en;
 logic [WIDTH-1:0] din, dout;
 
+// using an interface we now have to drive the dif signals (e.g., dif.din <= s.createSample())
+// instead of just directly driving rst, en, din, dout as declared above (e.g., din <= s.createSample)
+// Since clk is an input to the interface though we do have to drive clk normally still.
+data_intf #(.WIDTH(WIDTH)) dif(.clk(clk)); 
+
 DelayBuf #(
   .DEPTH(DEPTH),
   .SRLEN(SRLEN),
   .WIDTH(WIDTH)
-) DUT (.*);
+) DUT (.clk(clk),
+       .rst(dif.rst),
+       .en(dif.en),
+       .din(dif.din),
+       .dout(dif.dout)
+);
+
+mon mondut (dif);
 
 bind SRLShiftReg : DUT.headSR srif #(
                                 .DEPTH(8-1),
@@ -116,13 +128,21 @@ string logfmt = $psprintf("Cycle=%s: {en: 0b%s, din: 0x%s, reg: 0x%s, head: 0x%s
 initial begin
   Source s;
   Monitor m1, m2;
+
+  //using abstract class method and declaring an object to refer to the 'concrete handle' however,
+  // this could eaisly be added as a class member of a monitor class. The id was added as part of
+  // the bind statement instead of as a class constructor. But the same could be true of the ifsr
+  // bound instances. I could have done something similar. And vice versa if my current (or a new)
+  // monitor class took an abs_delay_itf in the contstructor I coudl give it the id there too.
   abs_delaybuf_itf #(.WIDTH(WIDTH)) dbitf;
   dbitf = DUT.hrif.ifm;
 
   s = new(DEPTH);
+  // using srif and tb monitor class
   m1 = new(DUT.headSR.ifsr, 1);
   m2 = new(DUT.gen_delay.sr.ifsr, 2);
-  dbitf.run; // error here? 
+
+  dbitf.run;
   m1.run;
   m2.run; 
   errors = 0;
@@ -130,16 +150,16 @@ initial begin
 
   $display("Cycle=%4d: **** Starting PE_ShiftReg test bench ****", simcycles);
   // reset circuit
-  rst <= 1; din <= s.createSample();
+  dif.rst <= 1; dif.din <= s.createSample();
   @(posedge clk);
-  @(negedge clk) rst = 0; en = 1;
+  @(negedge clk) dif.rst = 0; dif.en = 1;
 
   $display("Cycle=%4d: Finished init...", simcycles);
   //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, head: 0x%01X, reg: 0x%07X, dout: 0x%04X}", simcycles, en, din, DUT.headReg, DUT.shiftReg, dout);
   //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
   for (int i=0; i < 2*DEPTH; i++) begin
     wait_cycles(1);
-    din = s.createSample();
+    dif.din = s.createSample();
     #(1ns); // move off edge to monitor
     //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, reg: 0x%08X, dout: 0x%04X}", simcycles, en, din, DUT.shiftReg, dout);
     //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);

@@ -1,5 +1,27 @@
 `default_nettype none
 
+/*
+  General interface (no internal signals connected for whitebox verification)
+*/
+interface data_intf #(WIDTH=16) (
+  input wire logic clk
+);
+  logic [WIDTH-1:0] din, dout;
+  logic rst, en;
+
+  modport DUT (input clk, din, rst, en, output dout);
+  modport MON (input clk, din, rst, en, dout);
+endinterface
+
+module mon (data_intf.MON monif);
+  always @(posedge monif.clk)
+    $display("{en: 0b%1b, din: 0x%04X, dout: 0x%04X, rst: 0b%1b}",
+          monif.en, monif.din, monif.dout, monif.rst);
+endmodule
+
+/*
+  SRL32 interface for whitebox testing internal shiftReg signal
+*/
 interface srif #(DEPTH=8, WIDTH=16) (
   input wire logic clk,
   input wire logic [DEPTH*WIDTH-1:0] sr // internal signal
