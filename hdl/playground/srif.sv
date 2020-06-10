@@ -13,6 +13,8 @@ interface data_intf #(WIDTH=16) (
   modport MON (input clk, din, rst, en, dout);
 endinterface
 
+
+// could just have one giant monitoring module with an interface everything connects to
 module mon (data_intf.MON monif);
   always @(posedge monif.clk)
     $display("{en: 0b%1b, din: 0x%04X, dout: 0x%04X, rst: 0b%1b}",
@@ -31,8 +33,8 @@ clocking cb @(posedge clk);
   output sr; // directions are relative to the test bench
 endclocking
 
-always @cb
-  $display("%0X", sr);
+//always @cb
+//  $display("%0X", sr);
 
 function logic[DEPTH*WIDTH-1:0] get_sr();
   return sr;

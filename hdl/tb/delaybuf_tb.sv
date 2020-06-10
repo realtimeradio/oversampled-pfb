@@ -1,53 +1,45 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-// this is the third testbench... really should invest in writing packages, monitor,
+// TODO: this is the third testbench... really should invest in writing packages, monitor,
 // interface, drivers, etc so that I can reuse testbenches
 
 parameter PERIOD = 10;
-
-// I am not liking SRLEN and DEPTH being thrown around... starting to cause errors
+ 
+// TODO: I am not liking SRLEN and DEPTH being thrown around... starting to cause errors
 // and confusion... 
-parameter DEPTH = 16;
+parameter DEPTH = 24;
 parameter SRLEN = 8; 
 parameter WIDTH = 4;
 
-parameter NUM = 1;
-
-import abstract_cls::*;
+parameter NUM = DEPTH/SRLEN;
 
 module delaybuf_tb();
 
 logic clk, rst, en;
 logic [WIDTH-1:0] din, dout;
 
-// using an interface we now have to drive the dif signals (e.g., dif.din <= s.createSample())
-// instead of just directly driving rst, en, din, dout as declared above (e.g., din <= s.createSample)
-// Since clk is an input to the interface though we do have to drive clk normally still.
-data_intf #(.WIDTH(WIDTH)) dif(.clk(clk)); 
+delayline_ix #(.WIDTH(WIDTH)) dix(.clk(clk)); 
 
 DelayBuf #(
   .DEPTH(DEPTH),
   .SRLEN(SRLEN),
   .WIDTH(WIDTH)
 ) DUT (.clk(clk),
-       .rst(dif.rst),
-       .en(dif.en),
-       .din(dif.din),
-       .dout(dif.dout)
+       .rst(dix.rst),
+       .en(dix.en),
+       .din(dix.din),
+       .dout(dix.dout)
 );
 
-mon mondut (dif);
-
-bind SRLShiftReg : DUT.headSR srif #(
-                                .DEPTH(8-1),
-                                .WIDTH(WIDTH)
-                              ) ifsr (.sr(shiftReg), .clk);
-
-bind SRLShiftReg : DUT.gen_delay.sr srif #(
-                            .DEPTH(8),
-                            .WIDTH(WIDTH)
-                           ) ifsr (.sr(shiftReg), .clk);
+// note: bind places the instantiation in the target so the passed in `DEPTH` and `WIDTH`
+// keyworkds will be placed with the parameter passed in the the target module. Therefore in
+// this case DEPTH is the SRLShiftReg depth DelayBuf SRLEN -> SRLShiftReg DEPTH = 8 not the 24
+// defined above
+bind SRLShiftReg srif #(
+                    .DEPTH(DEPTH),
+                    .WIDTH(WIDTH)
+                 ) ifsr (.sr(shiftReg), .clk);
 
 bind DelayBuf : DUT delaybuf_itf #(
                             .WIDTH(WIDTH),
@@ -70,7 +62,7 @@ class Monitor;
   task run;
     fork
     forever
-      @(xif.cb) $display("sr:  %0d, 0x%08X", id, xif.get_sr());
+      @(xif.cb) $display("sr %0d: 0x%08X", id, xif.get_sr());
     join_none
   endtask
     
@@ -116,6 +108,17 @@ end
 
 int errors;
 
+// TODO: any race condition concerns using initial blocks to access the probe like this?
+Monitor mons[NUM-1];
+genvar mm;
+generate
+  for (mm=0; mm < NUM-1; mm++) begin
+    initial begin
+      mons[mm] = new(DUT.gen_delay.sr[mm].ifsr, mm);
+    end
+  end
+endgenerate
+
 parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
 parameter string binfmt = $psprintf("%%%0d%0s",1, "b");
 parameter string datfmt = $psprintf("%%%0d%0s",4, "X");
@@ -127,39 +130,38 @@ string logfmt = $psprintf("Cycle=%s: {en: 0b%s, din: 0x%s, reg: 0x%s, head: 0x%s
 
 initial begin
   Source s;
-  Monitor m1, m2;
+  Monitor m1;//, m2;
 
-  //using abstract class method and declaring an object to refer to the 'concrete handle' however,
-  // this could eaisly be added as a class member of a monitor class. The id was added as part of
-  // the bind statement instead of as a class constructor. But the same could be true of the ifsr
-  // bound instances. I could have done something similar. And vice versa if my current (or a new)
-  // monitor class took an abs_delay_itf in the contstructor I coudl give it the id there too.
-  abs_delaybuf_itf #(.WIDTH(WIDTH)) dbitf;
-  dbitf = DUT.hrif.ifm;
+  //abs_delaybuf_itf #(.WIDTH(WIDTH)) dbitf;
+  //dbitf = DUT.hrif.ifm;
 
-  s = new(DEPTH);
   // using srif and tb monitor class
   m1 = new(DUT.headSR.ifsr, 1);
-  m2 = new(DUT.gen_delay.sr.ifsr, 2);
 
-  dbitf.run;
-  m1.run;
-  m2.run; 
+  //dbitf.run;
+  //m1.run;
+  //m2.run;
+  for (int i=0; i<NUM-1; i++) begin
+    $display("starting monitor %0d", i);
+    mons[i].run;
+  end
+  s = new(DEPTH);
   errors = 0;
   //$display("%s, 0x%07X", dbitf.get_id(), dbitf.get_hr());
 
   $display("Cycle=%4d: **** Starting PE_ShiftReg test bench ****", simcycles);
+  $display("NUM=%04d", NUM);
   // reset circuit
-  dif.rst <= 1; dif.din <= s.createSample();
+  dix.rst <= 1; dix.din <= s.createSample();
   @(posedge clk);
-  @(negedge clk) dif.rst = 0; dif.en = 1;
+  @(negedge clk) dix.rst = 0; dix.en = 1;
 
   $display("Cycle=%4d: Finished init...", simcycles);
   //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, head: 0x%01X, reg: 0x%07X, dout: 0x%04X}", simcycles, en, din, DUT.headReg, DUT.shiftReg, dout);
   //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
   for (int i=0; i < 2*DEPTH; i++) begin
     wait_cycles(1);
-    dif.din = s.createSample();
+    dix.din = s.createSample();
     #(1ns); // move off edge to monitor
     //$display("Cycle=%4d: {en: 0b%1b, din: 0x%04X, reg: 0x%08X, dout: 0x%04X}", simcycles, en, din, DUT.shiftReg, dout);
     //$display(logfmt, simcycles, en, din, DUT.shiftReg, DUT.headReg, dout);
