@@ -90,9 +90,9 @@ class Sink;
   // constructor
   function new(int M);
     this.M = M;
-    n = 0;                              // decimated time sample
-    r = 0;                              // current state index
-    modtimer = 0;                       // right now, a mod counter to keep track AND the branch index
+    n = 0;          // decimated time sample
+    r = 0;          // current state index
+    modtimer = 0;   // right now, a mod counter to keep track AND the branch index
 
     NStates = NUM_STATES;
     shiftStates = new[NStates];

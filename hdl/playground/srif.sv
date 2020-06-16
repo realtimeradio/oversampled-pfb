@@ -26,7 +26,8 @@ endmodule
 */
 interface srif #(DEPTH=8, WIDTH=16) (
   input wire logic clk,
-  input wire logic [DEPTH*WIDTH-1:0] sr // internal signal
+  input wire logic [DEPTH*WIDTH-1:0] sr, // internal signals
+  input wire logic [WIDTH-1:0] hr
 );
 
 clocking cb @(posedge clk);
@@ -86,9 +87,11 @@ interface delaybuf_itf #(WIDTH=16, string id) (
         @(cb) $display("hr:  %0d, 0x%01X", id, get_hr());
       join_none
     endtask
-
   endclass
 
+  // to over come the id issue is there a way to a base class here and then instantiate
+  // an extended class in the tb?
+  //abs_delaybuf_itf #(.WIDTH(WIDTH)) base = new;
   intf_monitor #(.WIDTH(WIDTH)) ifm = new(id);
 
 endinterface
