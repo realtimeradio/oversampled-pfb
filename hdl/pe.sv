@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-module ospfb #(
+module OSPFB #(
   parameter WIDTH=16,
   parameter COEFF_WID=16,
   parameter FFT_LEN=32,
@@ -14,8 +14,8 @@ module ospfb #(
   input wire logic en,  // TODO: evaluate the need and use of this signal the signal
   // TODO: wanting to implement tready as a debug to make sure we are always accepting a sample
   // each cycle as noted in the AMBA AXIS recommendation for tready implementation
-  axis_t.MST m_axis,
-  axis_t.SLV s_axis
+  axis.MST m_axis,
+  axis.SLV s_axis
 );
 
 
@@ -70,8 +70,9 @@ always_ff @(posedge clk)
   cs <= ns;
 
 always_comb begin
-  // default values
+  // default values to prevent latch inferences
   ns = ERR;
+  din = 32'haabbccdd; //should never see this value, error if so
 
   // ospfb.py top-level equivalent producing the vin to start the process
   s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
@@ -79,8 +80,10 @@ always_comb begin
   // TODO: what is the right thing to do here... for the output
   m_axis.tvalid = vout;
   m_axis.tdata  = dout;
-  // TODO: where to use m_axis.tready for debug monitoring of slave
 
+  // TODO: where to use m_axis.tready for debug monitoring of slave. If m_axis.tready isn't used
+  // for anything meaningful vivado synthesis throws a warning but may not be an issue. Will get
+  // unexpected synthesis behavior if I don't remove this when testing it
   vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
 
   if (rst)
@@ -88,7 +91,7 @@ always_comb begin
   else
     case (cs)
       FORWARD: begin
-        din = m_axis.tdata;
+        din = s_axis.tdata;
         if (modtimer == DEC_FAC-1)
           ns = FEEDBACK;
         else
@@ -148,7 +151,7 @@ PE #(
   .en(en),
   .vin({vin, pe_vout[0:PTAPS-2]}),
   .din({din, pe_dout[0:PTAPS-2]}),
-  .sin({'0,  pe_sout[0:PTAPS-2]}),
+  .sin({{WIDTH{1'b0}},  pe_sout[0:PTAPS-2]}),
   .vout(pe_vout),
   .dout(pe_dout),
   .sout(pe_sout)
@@ -187,8 +190,16 @@ localparam M_D = FFT_LEN-DEC_FAC;
   TODO: how are the coefficients initialized? Should their be coeff port
   or an initial statement with coeff file?
 */
+
+
 logic signed [(COEFF_WID-1):0] coeff_ram[FFT_LEN];
 logic [$clog2(FFT_LEN)-1:0] coeff_ctr;
+
+initial begin
+  for (int i=0; i<FFT_LEN; i++) begin
+    coeff_ram[i] = '1;
+  end
+end
 
 // MAC operation signals
 logic signed [WIDTH-1:0] a;       // sin + din*h TODO: verilog gotchas to extend and determine
@@ -208,6 +219,11 @@ always_ff @(posedge clk)
       coeff_ctr <= coeff_ctr + 1;
   else
     coeff_ctr <= coeff_ctr;
+
+// logic we;
+// assign we = 1'b0;
+// always @(posedge clk)
+//   if (we) coeff_ram[coeff_ctr] <= '0;
 
 assign h = coeff_ram[coeff_ctr];
 

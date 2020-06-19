@@ -9,15 +9,12 @@ logic [WIDTH-1:0] din, dout;
 
 endinterface
 
-interface axis #(WIDTH) (
-  input wire logic clk
-);
+interface axis #(WIDTH) ();
 
   logic [WIDTH-1:0] tdata;
-  logic tvalid, tready, tlast;
-  logic rst;
+  logic tvalid, tready;
 
-  modport MST (input clk, rst, tready, output tdata, tvalid, tlast);
-  modport SLV (input clk, rst, tdata, tvalid, tlast, output tready);
+  modport MST (input tready, output tdata, tvalid);
+  modport SLV (input tdata, tvalid, output tready);
 
 endinterface
