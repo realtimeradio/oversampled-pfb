@@ -57,10 +57,10 @@ parameter string datfmt = $psprintf("%%%0d%0s",WIDTH, "X");
 parameter string regfmt = $psprintf("%%%0d%0s",SRLEN, "X");
 parameter string hedfmt = $psprintf("%%%0d%0s",1, "X");
 
-typedef virtual delayline_ix #(.WIDTH(WIDTH)) dbX_t;
-typedef virtual srif #(.DEPTH(SRLEN-1), .WIDTH(WIDTH)) headX_t;
-typedef virtual srif #(.DEPTH(SRLEN), .WIDTH(WIDTH)) srX_t;
-typedef virtual srif #(.DEPTH(DEPTH), .WIDTH(WIDTH)) reX_t;
+typedef virtual delayline_ix #(.WIDTH(WIDTH)) dbX_t; // primarydriving interface
+typedef virtual srif #(.DEPTH(SRLEN-1), .WIDTH(WIDTH)) headX_t; // the ifsr bound to the headSR
+typedef virtual srif #(.DEPTH(SRLEN), .WIDTH(WIDTH)) srX_t; // the ifsr bound to the NUM array of shift regs
+typedef virtual srif #(.DEPTH(DEPTH), .WIDTH(WIDTH)) reX_t; // the dbif bound in the delaybuf
 
 class Monitor;
   dbX_t mainX_h;
