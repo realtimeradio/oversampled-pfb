@@ -3,9 +3,21 @@
 
 package alpaca_ospfb_utils_pkg;
 
+// display constants
+parameter RED = "\033\[0;31m";
+parameter GRN = "\033\[0;32m";
+parameter RST = "\033\[0m";
+
+parameter PERIOD = 10;
+
+parameter WIDTH = 16;
+parameter SRLEN = 4;
+
+// testing smaller modules (DelayBuf, SRLShiftReg, set DEPTH=FFT_LEN)
 parameter int  FFT_LEN = 32;               // (M)   polyphase branches
 parameter real OSRATIO = 3.0/4.0;          // (M/D) oversampling ratio
 parameter int  DEC_FAC = FFT_LEN*OSRATIO;  // (D)   decimation factor 
+parameter PTAPS = 8;
 
 //typedef struct {
 //  /* is it possible to parameterize a struct or just a class?

@@ -37,7 +37,7 @@ module ospfb_tb();
 logic clk, rst, en;
 logic [WIDTH-1:0] din, dout;
 
-axis #(.WIDTH(WIDTH)) mst(.clk(clk)), slv(.clk(clk));
+axis #(.WIDTH(WIDTH)) mst(), slv();
 
 OSPFB #(
   .WIDTH(WIDTH),
