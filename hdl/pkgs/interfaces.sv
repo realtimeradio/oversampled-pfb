@@ -1,6 +1,7 @@
 `default_nettype none
 
 import alpaca_ospfb_ix_pkg::*;
+import alpaca_ospfb_utils_pkg::*;
 
 interface delayline_ix #(WIDTH) (
   input wire logic clk
@@ -18,6 +19,11 @@ interface axis #(WIDTH) ();
 
   modport MST (input tready, output tdata, tvalid);
   modport SLV (input tdata, tvalid, output tready);
+
+  function string print();
+    automatic string s = $psprintf("{tvalid: 0b%s, tready:0b%s, tdata:0x%s}", BINFMT, BINFMT, DATFMT);
+    return $psprintf(s, tvalid, tready, tdata);
+  endfunction
 
 endinterface
 

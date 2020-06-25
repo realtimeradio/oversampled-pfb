@@ -18,7 +18,6 @@ module OSPFB #(
   axis.SLV s_axis
 );
 
-
 // for controlling samples
 logic [$clog2(FFT_LEN)-1:0] modtimer;
 
@@ -37,12 +36,14 @@ always_ff @(posedge clk)
   else
     modtimer <= modtimer;
 
-// TODO: With SRL32s there is no real state machine for pop/push into the delay lines because
-// they are implemented now as a true SR fifo and not a bram fifo with circular address
-// pointers. The only state machine for now is therefore this top one that is used for debugging
-// and implementing AXIS. Hoping it is not too much overhead. The debugging on AXIS came from
-// ARM AXIS recommendation to implement tready even if the IP always needs to be ready as a way
-// to debug and that if it isn't the signal is monitored more as an error.
+/*
+  TODO: With SRL32s there is no real state machine for pop/push into the delay lines because
+  they are implemented now as a true SR fifo and not a bram fifo with circular address
+  pointers. The only state machine for now is therefore this top one that is used for debugging
+  and implementing AXIS. Hoping it is not too much overhead. The debugging on AXIS came from
+  ARM AXIS recommendation to implement tready even if the IP always needs to be ready as a way
+  to debug and that if it isn't the signal is monitored more as an error.
+*/
 
 datapath #(
   .WIDTH(WIDTH),
@@ -81,9 +82,11 @@ always_comb begin
   m_axis.tvalid = vout;
   m_axis.tdata  = dout;
 
-  // TODO: where to use m_axis.tready for debug monitoring of slave. If m_axis.tready isn't used
-  // for anything meaningful vivado synthesis throws a warning but may not be an issue. Will get
-  // unexpected synthesis behavior if I don't remove this when testing it
+  /*
+     TODO: where to use m_axis.tready for debug monitoring of slave. If m_axis.tready isn't used
+     for anything meaningful vivado synthesis throws a warning but may not be an issue. Will get
+     unexpected synthesis behavior if I don't remove this when testing it
+  */
   vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
 
   if (rst)
@@ -185,19 +188,12 @@ module PE #(
 // TODO: does this need to be a logic val?
 localparam M_D = FFT_LEN-DEC_FAC;
 
-/*
-  Coefficient (LUT) RAM
-  TODO: how are the coefficients initialized? Should their be coeff port
-  or an initial statement with coeff file?
-*/
-
-
 logic signed [(COEFF_WID-1):0] coeff_ram[FFT_LEN];
 logic [$clog2(FFT_LEN)-1:0] coeff_ctr;
 
 initial begin
   for (int i=0; i<FFT_LEN; i++) begin
-    coeff_ram[i] = '1;
+    coeff_ram[i] = {{COEFF_WID-1{1'b0}}, {1'b1}};
   end
 end
 
@@ -207,7 +203,7 @@ logic signed [(COEFF_WID-1):0] h; // coeff tap value
 logic signed [(WIDTH-1):0] mac;   // TODO: need correct width and avoid verilog gotchas (sign/ext)
 
 // buffer connection signals
-logic signed [WIDTH-1:0] delaybuf_out;
+logic signed [WIDTH-1:0] loopbuf_out;
 
 always_ff @(posedge clk)
   if (rst)
@@ -220,11 +216,6 @@ always_ff @(posedge clk)
   else
     coeff_ctr <= coeff_ctr;
 
-// logic we;
-// assign we = 1'b0;
-// always @(posedge clk)
-//   if (we) coeff_ram[coeff_ctr] <= '0;
-
 assign h = coeff_ram[coeff_ctr];
 
 // pull from input or reuse from delay line
@@ -232,7 +223,7 @@ always_comb begin
   if (vin)
     a = din;
   else
-    a = delaybuf_out;
+    a = loopbuf_out;
 end
 
 assign mac = sin + a*h;
@@ -241,12 +232,12 @@ DelayBuf #(
   .DEPTH(M_D),
   .SRLEN(SRLEN),
   .WIDTH(WIDTH)
-) delaybuf (
+) loopbuf (
   .clk(clk),
   .rst(rst),
   .en(en),
   .din(a),
-  .dout(delaybuf_out)
+  .dout(loopbuf_out)
 );
 
 DelayBuf #(
@@ -257,7 +248,7 @@ DelayBuf #(
   .clk(clk),
   .rst(rst),
   .en(en),
-  .din(delaybuf_out),
+  .din(loopbuf_out),
   .dout(dout)
 );
 

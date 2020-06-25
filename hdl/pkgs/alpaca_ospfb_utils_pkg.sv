@@ -11,13 +11,21 @@ parameter RST = "\033\[0m";
 parameter PERIOD = 10;
 
 parameter WIDTH = 16;
+parameter COEFF_WID = 16;
+
+// TODO: FFT_LEN-DEC_FAC an issue here because need to build out the correct length
 parameter SRLEN = 4;
 
 // testing smaller modules (DelayBuf, SRLShiftReg, set DEPTH=FFT_LEN)
-parameter int  FFT_LEN = 32;               // (M)   polyphase branches
+parameter int  FFT_LEN = 64;               // (M)   polyphase branches
 parameter real OSRATIO = 3.0/4.0;          // (M/D) oversampling ratio
 parameter int  DEC_FAC = FFT_LEN*OSRATIO;  // (D)   decimation factor 
-parameter PTAPS = 8;
+parameter PTAPS = 2;
+
+parameter string CYCFMT = $psprintf("%%%0d%0s",4, "d");
+parameter string BINFMT = $psprintf("%%%0d%0s",1, "b");
+parameter string DATFMT = $psprintf("%%%0d%0s",4, "X");
+
 
 //typedef struct {
 //  /* is it possible to parameterize a struct or just a class?
