@@ -21,7 +21,8 @@ interface axis #(WIDTH) ();
   modport SLV (input tdata, tvalid, output tready);
 
   function string print();
-    automatic string s = $psprintf("{tvalid: 0b%s, tready:0b%s, tdata:0x%s}", BINFMT, BINFMT, DATFMT);
+    automatic string s = $psprintf("{tvalid: 0b%s, tready:0b%s, tdata:0x%s}",
+                                    BINFMT, BINFMT, DATFMT);
     return $psprintf(s, tvalid, tready, tdata);
   endfunction
 
