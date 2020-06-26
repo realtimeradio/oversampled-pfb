@@ -6,14 +6,11 @@ import alpaca_ospfb_utils_pkg::*;
 interface delayline_ix #(WIDTH) (
   input wire logic clk
 );
-
   logic rst, en;
   logic [WIDTH-1:0] din, dout;
-
 endinterface
 
 interface axis #(WIDTH) ();
-
   logic [WIDTH-1:0] tdata;
   logic tvalid, tready;
 
@@ -25,9 +22,7 @@ interface axis #(WIDTH) ();
                                     BINFMT, BINFMT, DATFMT);
     return $psprintf(s, tvalid, tready, tdata);
   endfunction
-
 endinterface
-
 
 interface sr_if #(
   parameter WIDTH,
@@ -66,6 +61,43 @@ interface sr_if #(
   endclass
 
   sr_probe #(.WIDTH(WIDTH), .SRLEN(SRLEN)) monitor = new;
+
+endinterface
+
+interface pe_if #(
+  parameter WIDTH,
+  parameter COEFF_WID
+) (
+  input wire signed [COEFF_WID-1:0] h,
+  input wire signed [WIDTH-1:0] a
+);
+
+  class pe_probe extends vpe;
+
+    string macfmt;
+    string unknown;
+
+    function new();
+      this.macfmt = "h%0d%0s";
+      this.unknown = "*";
+    endfunction
+
+    function string peek(int idx, int fft_len);
+      int hi = h;
+      int symh = idx*FFT_LEN + hi;
+
+      string syma;
+      if (a === 'x)
+        syma = unknown;
+      else
+        syma = $psprintf("x%0d", a);
+
+      return $psprintf(macfmt, symh, syma);
+    endfunction
+
+  endclass
+
+  pe_probe monitor = new;
 
 endinterface
 

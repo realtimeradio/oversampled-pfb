@@ -100,6 +100,8 @@ generate
                              DUT.fir.pe[pp].loopbuf.headSR.probe.monitor,
                              sr_loopbuf_h[pp]);
 
+      pe_h[pp].mac = DUT.fir.pe[pp].probe.monitor;
+
     end
   end
 endgenerate
@@ -129,16 +131,14 @@ initial begin
   @(negedge clk) rst = 0; en = 1; slv.tvalid = en;
 
   $display("Cycle=%4d: Finished init...", simcycles);
-  for (int i=0; i < FFT_LEN; i++) begin
+  for (int i=0; i < FFT_LEN+1; i++) begin
     wait_cycles(1);
-    #(1ns); // move off edge to monitor (or is it really we move off to drive)?
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), mst.print(), RST);
-    //ospfb.monitor();
+    ospfb.monitor();
     slv.tdata = src.createSample();
   end
 
-  wait_cycles(1);
   $display("*** Simulation complete: Errors=%4d ***", errors);
   $finish;
 end

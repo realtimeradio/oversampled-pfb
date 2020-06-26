@@ -120,7 +120,8 @@ axis #(.WIDTH($clog2(MAX_CNT))) mst();
 
 top #(
   .MAX_CNT(MAX_CNT),
-  .STP_CNT(STP_CNT)
+  .STP_CNT(STP_CNT),
+  .ORDER("processing")
 ) DUT (
   .clk(clk),
   .rst(rst),

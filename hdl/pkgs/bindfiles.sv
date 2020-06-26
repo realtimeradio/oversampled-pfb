@@ -12,4 +12,13 @@ module BindFiles;
                    ) probe (
                     .shiftReg(shiftReg)
                    );
+
+  bind PE pe_if #(
+            .WIDTH(WIDTH),
+            .COEFF_WID(COEFF_WID)
+          ) probe (
+            .h(h),
+            .a(a)
+          );
+          
 endmodule

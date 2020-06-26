@@ -8,6 +8,10 @@ virtual class probe #(parameter WIDTH, parameter DEPTH);
   pure virtual function logic[DEPTH*WIDTH-1:0]  get_sr();
 endclass
 
+virtual class vpe;
+  pure virtual function string peek(int idx, int fft_len);
+endclass
+
 //virtual class template_probe #(parameter WIDTH, type T=logic[WIDTH-1:0]);
 //  pure virtual function string poke();
 //endclass
@@ -85,6 +89,8 @@ package alpaca_ospfb_monitor_pkg;
     loopbuf_t loopbuf;
     sumbuf_t sumbuf;
     vldbuf_t vldbuf;
+
+    vpe mac;
     //function new(databuf_t d, loopbuf_t l, sumbuf_t s, vldbuf_t v);
     //  this.databuf = d;
     //  this.loopbuf = l;
@@ -102,6 +108,10 @@ package alpaca_ospfb_monitor_pkg;
 
     function string print_loopbuf();
       return loopbuf.print_reg();
+    endfunction
+
+    function string get_mac(int idx);
+      return mac.peek(idx, FFT_LEN);
     endfunction
 
   endclass
@@ -127,12 +137,21 @@ package alpaca_ospfb_monitor_pkg;
 
 
     function void monitor();
+      string macstr = "";
       for (int i=0; i < $size(pe_monitors); i++) begin
-        $display("PE #%0d", i);
-        $display({"loopbuf: ", pe_monitors[i].print_loopbuf()});
-        $display({"databuf: ", pe_monitors[i].print_databuf()});
-        $display({"sumbuf : ", pe_monitors[i].print_sumbuf(), "\n"});
+        // Show delay buffer contents
+        //$display("PE #%0d", i);
+        //$display({"loopbuf: ", pe_monitors[i].print_loopbuf()});
+        //$display({"databuf: ", pe_monitors[i].print_databuf()});
+        //$display({"sumbuf : ", pe_monitors[i].print_sumbuf(), "\n"});
+
+        // Format symbolic polyphase fir summation string
+        if (i==0)
+          macstr = {macstr, pe_monitors[i].get_mac(i)};
+        else
+          macstr = {macstr, " + ", pe_monitors[i].get_mac(i)};
       end
+      $display("%s\n", macstr);
     endfunction
 
   endclass

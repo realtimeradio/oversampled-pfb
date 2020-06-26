@@ -193,7 +193,7 @@ logic [$clog2(FFT_LEN)-1:0] coeff_ctr;
 
 initial begin
   for (int i=0; i<FFT_LEN; i++) begin
-    coeff_ram[i] = {{COEFF_WID-1{1'b0}}, {1'b1}};
+    coeff_ram[i] = i; //{{COEFF_WID-1{1'b0}}, {1'b1}};
   end
 end
 
