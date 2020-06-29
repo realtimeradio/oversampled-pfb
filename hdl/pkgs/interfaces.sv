@@ -24,6 +24,9 @@ interface axis #(WIDTH) ();
   endfunction
 endinterface
 
+/*
+  Shift register monitoring interface
+*/
 interface sr_if #(
   parameter WIDTH,
   parameter SRLEN
@@ -64,12 +67,15 @@ interface sr_if #(
 
 endinterface
 
+/*
+  PE monitoring interface
+*/
 interface pe_if #(
   parameter WIDTH,
   parameter COEFF_WID
 ) (
-  input wire signed [COEFF_WID-1:0] h,
-  input wire signed [WIDTH-1:0] a
+  input wire logic signed [COEFF_WID-1:0] h,
+  input wire logic signed [WIDTH-1:0] a
 );
 
   class pe_probe extends vpe;
@@ -102,38 +108,88 @@ interface pe_if #(
 endinterface
 
 /*
-*
-* interface delayline_ix #(WIDTH) (
-*   input wire logic clk
-* );
-* 
-* logic [WIDTH-1:0] din, dout;
-* logic rst, en;
-* 
-* class delayline_probe extends probe;
-*   string id;
-*   string binfmt;
-*   string datfmt;
-*   string dispfmt;
-* 
-*   function new();
-*     this.binfmt = $psprintf("%%%0d%0s", 1, "b");
-*     this.datfmt = $psprintf("%%%0d%0s", WIDTH, "X");
-*     this.dispfmt = $psprintf("{rst: 0b%s, en: 0b%s, din: 0x%s, dout: 0x%s}",
-*                                 binfmt, binfmt, datfmt, datfmt);
-*   endfunction
-* 
-*   function string get_id();
-*     return id;
-*   endfunction 
-* 
-*   function string poke();
-*     string s;
-*     s = $psprintf(this.dispfmt, rst, en, din, dout);
-*     return s;
-*   endfunction
-* endclass  // delayline_probe
-* 
-* delayline_probe dp = new;
-* endinterface
+  Source monitoring interface
+*/
+interface src_if #(
+  parameter MAX_CNT=32
+) (
+  input wire logic clk,
+  input wire logic [$clog2(MAX_CNT)-1:0] dout
+);
+
+  class src_probe extends vsrc;
+
+    int frameCtr; // counts number of roll-over events mod MAX_CNT (e.g., FFT_LEN) at source
+
+    function new();
+      this.frameCtr = 0;
+    endfunction
+
+    function string peek();
+      return "watching the source...";
+    endfunction
+
+    function int get_frameCtr();
+      return frameCtr;
+    endfunction
+
+    function void incFrameCtr;
+      frameCtr++;
+    endfunction;
+
+    task run;
+      fork
+        forever monitorRollOver;
+      join_none // why join_none?
+    endtask
+
+    task monitorRollOver;
+      @(posedge clk);
+      $display("src clk edge monitor, %0b, %0b", dout, &(~dout));
+        if (&(~dout))
+          incFrameCtr();
+    endtask
+
+  endclass
+
+  src_probe monitor = new;
+
+endinterface
+
+
+
+/*
+  interface delayline_ix #(WIDTH) (
+    input wire logic clk
+  );
+
+  logic [WIDTH-1:0] din, dout;
+  logic rst, en;
+
+  class delayline_probe extends probe;
+    string id;
+    string binfmt;
+    string datfmt;
+    string dispfmt;
+
+    function new();
+      this.binfmt = $psprintf("%%%0d%0s", 1, "b");
+      this.datfmt = $psprintf("%%%0d%0s", WIDTH, "X");
+      this.dispfmt = $psprintf("{rst: 0b%s, en: 0b%s, din: 0x%s, dout: 0x%s}",
+                                  binfmt, binfmt, datfmt, datfmt);
+    endfunction
+
+    function string get_id();
+      return id;
+    endfunction
+
+    function string poke();
+      string s;
+      s = $psprintf(this.dispfmt, rst, en, din, dout);
+      return s;
+    endfunction
+  endclass  // delayline_probe
+
+  delayline_probe dp = new;
+  endinterface
 */

@@ -20,12 +20,11 @@ parameter SRLEN = 4;
 parameter int  FFT_LEN = 64;               // (M)   polyphase branches
 parameter real OSRATIO = 3.0/4.0;          // (M/D) oversampling ratio
 parameter int  DEC_FAC = FFT_LEN*OSRATIO;  // (D)   decimation factor 
-parameter PTAPS = 2;
+parameter PTAPS = 3;
 
 parameter string CYCFMT = $psprintf("%%%0d%0s",4, "d");
 parameter string BINFMT = $psprintf("%%%0d%0s",1, "b");
-parameter string DATFMT = $psprintf("%%%0d%0s",4, "X");
-
+parameter string DATFMT = $psprintf("%%%0d%0s",0, "d");
 
 //typedef struct {
 //  /* is it possible to parameterize a struct or just a class?

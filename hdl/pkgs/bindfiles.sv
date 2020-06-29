@@ -20,5 +20,12 @@ module BindFiles;
             .h(h),
             .a(a)
           );
+
+  bind src_ctr src_if #(
+                 .MAX_CNT(MAX_CNT)
+               ) probe (
+                 .clk(clk),
+                 .dout(ctr)
+               );
           
 endmodule

@@ -12,6 +12,12 @@ virtual class vpe;
   pure virtual function string peek(int idx, int fft_len);
 endclass
 
+virtual class vsrc;
+  pure virtual function string peek();
+  pure virtual function int get_frameCtr();
+  pure virtual task run();
+endclass
+
 //virtual class template_probe #(parameter WIDTH, type T=logic[WIDTH-1:0]);
 //  pure virtual function string poke();
 //endclass
@@ -130,20 +136,21 @@ package alpaca_ospfb_monitor_pkg;
   );
 
     pe_t pe_monitors[PTAPS];
+    vsrc source_monitor;
 
-    function new(pe_t pe[]);
+    function new(pe_t pe[], vsrc src);
       this.pe_monitors = pe;
+      this.source_monitor = src;
     endfunction
-
 
     function void monitor();
       string macstr = "";
       for (int i=0; i < $size(pe_monitors); i++) begin
         // Show delay buffer contents
-        //$display("PE #%0d", i);
-        //$display({"loopbuf: ", pe_monitors[i].print_loopbuf()});
-        //$display({"databuf: ", pe_monitors[i].print_databuf()});
-        //$display({"sumbuf : ", pe_monitors[i].print_sumbuf(), "\n"});
+        // $display("PE #%0d", i);
+        // $display({"loopbuf: ", pe_monitors[i].print_loopbuf()});
+        // $display({"databuf: ", pe_monitors[i].print_databuf()});
+        // $display({"sumbuf : ", pe_monitors[i].print_sumbuf(), "\n"});
 
         // Format symbolic polyphase fir summation string
         if (i==0)
@@ -152,6 +159,7 @@ package alpaca_ospfb_monitor_pkg;
           macstr = {macstr, " + ", pe_monitors[i].get_mac(i)};
       end
       $display("%s\n", macstr);
+      $display("frame ctr: %0d", source_monitor.get_frameCtr());
     endfunction
 
   endclass

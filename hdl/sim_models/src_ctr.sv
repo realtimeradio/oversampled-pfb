@@ -7,6 +7,7 @@
 */
 
 module src_ctr #(
+  parameter WIDTH=16,
   parameter MAX_CNT=32,
   parameter string ORDER="processing"
 ) (
@@ -15,23 +16,37 @@ module src_ctr #(
   axis.MST m_axis
 );
 
-localparam logic [$clog2(MAX_CNT)-1:0] rst_val = (ORDER=="processing") ?  '1 : '0;
-localparam logic [$clog2(MAX_CNT)-1:0] cnt_val = (ORDER=="processing") ? -1'sb1 : 1'b1;
+localparam logic [WIDTH-1:0] rst_val = (ORDER=="processing") ?  MAX_CNT-1 : '0;
+localparam logic [WIDTH-1:0] cnt_val = (ORDER=="processing") ? -1'sb1 : 1'b1;
 
-logic [$clog2(MAX_CNT)-1:0] ctr;
+logic [WIDTH-1:0] dout;
+
+// only needed for processing order source
+logic [WIDTH-1:0] highVal;
+logic en;
 
 always_ff @(posedge clk)
   if (rst)
-    ctr <= rst_val;
-  else begin
-    if (m_axis.tready)
-      ctr <= ctr + cnt_val;
+    highVal <= MAX_CNT;
+  else if (m_axis.tready)
+    if (dout[$clog2(MAX_CNT)-1:0] == 1)
+      highVal <= highVal + MAX_CNT;
     else
-      ctr <= ctr;
-  end
+      highVal <= highVal;
+
+always_ff @(posedge clk)
+  if (rst)
+    dout <= rst_val;
+  else if (m_axis.tready)
+    if (dout[$clog2(MAX_CNT)-1:0] == 0)
+      dout <= highVal - 1;
+    else
+      dout <= dout + cnt_val;
+  else
+    dout <= dout;
 
 assign m_axis.tvalid = m_axis.tready;
-assign m_axis.tdata = ctr;
+assign m_axis.tdata = dout;
 
 endmodule
 
@@ -70,6 +85,7 @@ endmodule
 
 // TOP combining source counter and pass through for example checking
 module top #(
+  parameter int WIDTH = 16,
   parameter int MAX_CNT = 32,
   parameter int STP_CNT = 24,
   parameter string ORDER = "processing"
@@ -79,9 +95,10 @@ module top #(
   axis.MST m_axis
 );
 
-  axis #(.WIDTH($clog2(MAX_CNT))) axis_src_to_pt();
+  axis #(.WIDTH(WIDTH)) axis_src_to_pt();
 
   src_ctr #(
+    .WIDTH(WIDTH),
     .MAX_CNT(MAX_CNT),
     .ORDER(ORDER)
   ) src_ctr_inst (
@@ -109,16 +126,16 @@ endmodule
 import alpaca_ospfb_utils_pkg::*;
 module test_src_ctr;
 
-parameter PERIOD = 10;
-parameter MAX_CNT = 4;
-parameter STP_CNT = 3;
+parameter MAX_CNT = 8;
+parameter STP_CNT = 6;
 
 logic clk, rst;
-axis #(.WIDTH($clog2(MAX_CNT))) mst();
+axis #(.WIDTH(WIDTH)) mst();
 
 //src_ctr #(.MAX_CNT(MAX_CNT)) DUT (.clk(clk), .rst(rst), .m_axis(mst));
 
 top #(
+  .WIDTH(WIDTH),
   .MAX_CNT(MAX_CNT),
   .STP_CNT(STP_CNT),
   .ORDER("processing")

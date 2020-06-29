@@ -20,6 +20,15 @@ logic [WIDTH-1:0] din, dout;
 
 axis #(.WIDTH(WIDTH)) mst(), slv();
 
+// data source for simulation
+src_ctr #(
+  .MAX_CNT(FFT_LEN)
+) src_ctr_inst (
+  .clk(clk),
+  .rst(rst),
+  .m_axis(slv)
+);
+
 OSPFB #(
   .WIDTH(WIDTH),
   .COEFF_WID(COEFF_WID),
@@ -107,36 +116,28 @@ generate
 endgenerate
 
 parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
-parameter string binfmt = $psprintf("%%%0d%0s",1, "b");
-parameter string datfmt = $psprintf("%%%0d%0s",4, "X");
-parameter string regfmt = $psprintf("%%%0d%0s ",SRLEN, "X");
-parameter string hedfmt = $psprintf("%%%0d%0s",1, "X");
-
 string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
+
 initial begin
   ospfb_t ospfb;
-  Source src;
-  
   int errors;
 
-  ospfb = new(pe_h);
-  src = new(FFT_LEN);
-  
+  ospfb = new(pe_h, src_ctr_inst.probe.monitor);
+  ospfb.source_monitor.run();
   errors = 0;
 
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
-  rst <= 1; slv.tdata <= src.createSample();
+  rst <= 1;
   @(posedge clk);
-  @(negedge clk) rst = 0; en = 1; slv.tvalid = en;
+  @(negedge clk) rst = 0; en = 1;
 
   $display("Cycle=%4d: Finished init...", simcycles);
-  for (int i=0; i < FFT_LEN+1; i++) begin
+  for (int i=0; i < 6*FFT_LEN+1; i++) begin
     wait_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), mst.print(), RST);
     ospfb.monitor();
-    slv.tdata = src.createSample();
   end
 
   $display("*** Simulation complete: Errors=%4d ***", errors);
