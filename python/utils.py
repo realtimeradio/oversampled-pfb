@@ -96,8 +96,11 @@ def pltCompareFine(model, golden, nfine_channels, nfft_fine, fs_os, hsov):
   fbins_fine = np.arange(0, nfine_channels) + fshift
   faxis_fine = fbins_fine*fs_os/nfft_fine
 
-  plt.plot(faxis_fine, 10*np.log10(model))
-  plt.plot(faxis_fine, 10*np.log10(golden))
+  plt.plot(faxis_fine, 10*np.log10(model), label='model')
+  plt.plot(faxis_fine, 10*np.log10(golden), label='golden', linestyle='--')
+  plt.xlabel("Frequency")
+  plt.ylabel("Power (arb units dB)")
+  plt.legend()
   plt.grid()
   plt.show()
 
@@ -125,8 +128,12 @@ def pltCompareSxx(model, golden, nfine_channels, nfft_fine, fs_os, hsov):
   fbins_fine = np.arange(0, nfine_channels) + fshift
   faxis_fine = fbins_fine*fs_os/nfft_fine
 
-  plt.plot(faxis_fine, 10*np.log10(Sxx_model))
-  plt.plot(faxis_fine, 10*np.log10(Sxx_golden))
+  plt.plot(faxis_fine, 10*np.log10(Sxx_model), label='model')
+  plt.plot(faxis_fine, 10*np.log10(Sxx_golden), label='golden', linestyle='--')
+  plt.title("OSPFB Architecture Simulation")
+  plt.xlabel("Frequency")
+  plt.ylabel("Power (arb units dB)")
+  plt.legend()
   plt.grid()
   plt.show()
 
