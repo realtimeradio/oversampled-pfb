@@ -22,7 +22,9 @@ axis #(.WIDTH(WIDTH)) mst(), slv();
 
 // data source for simulation
 src_ctr #(
-  .MAX_CNT(FFT_LEN)
+  .WIDTH(WIDTH),
+  .MAX_CNT(FFT_LEN),
+  .ORDER("natural")
 ) src_ctr_inst (
   .clk(clk),
   .rst(rst),
@@ -34,6 +36,7 @@ OSPFB #(
   .COEFF_WID(COEFF_WID),
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
+  .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN)
 ) DUT (
@@ -122,8 +125,7 @@ initial begin
   ospfb_t ospfb;
   int errors;
 
-  ospfb = new(pe_h, src_ctr_inst.probe.monitor);
-  ospfb.source_monitor.run();
+  ospfb = new(pe_h);
   errors = 0;
 
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);

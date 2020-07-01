@@ -6,6 +6,7 @@ module OSPFB #(
   parameter COEFF_WID=16,
   parameter FFT_LEN=32,
   parameter DEC_FAC=24,
+  parameter SRT_PHA=23,  // modtimer decimation phase start (which port delivered first)
   parameter PTAPS=8,
   parameter SRLEN=8
 ) (
@@ -19,7 +20,10 @@ module OSPFB #(
 );
 
 // for controlling samples
-logic [$clog2(FFT_LEN)-1:0] modtimer;
+logic [$clog2(FFT_LEN)-1:0] modtimer;           // decimator phase
+logic [$clog2(FFT_LEN)-1:0] rst_val = SRT_PHA;  // starting decimator phase (which port gets first sample)
+
+
 
 logic vin;
 logic signed [WIDTH-1:0] din;
@@ -30,7 +34,7 @@ logic signed [WIDTH-1:0] sout;
 
 always_ff @(posedge clk)
   if (rst)
-    modtimer <= '0;
+    modtimer <= rst_val;
   else if (en)
     modtimer <= modtimer + 1;
   else
@@ -76,6 +80,7 @@ always_comb begin
   din = 32'haabbccdd; //should never see this value, error if so
 
   // ospfb.py top-level equivalent producing the vin to start the process
+  // why modtimer < dec_fac and not dec_fac-1 like in src counter pass through?
   s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
 
   // TODO: what is the right thing to do here... for the output
@@ -137,7 +142,6 @@ module datapath #( // less phasecomp...
   output logic signed [WIDTH-1:0] sout
 );
 
-
 logic signed [0:PTAPS-1][WIDTH-1:0] pe_sout;
 logic signed [0:PTAPS-1][WIDTH-1:0] pe_dout;
 logic [0:PTAPS-1] pe_vout; // valid are single bit, no width param
@@ -147,6 +151,7 @@ PE #(
   .COEFF_WID(COEFF_WID),
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
+  .COF_SRT(0),
   .SRLEN(SRLEN)
 ) pe[0:PTAPS-1] (
   .clk(clk),
@@ -172,6 +177,7 @@ module PE #(
   parameter COEFF_WID=16,
   parameter FFT_LEN=64,
   parameter DEC_FAC=48,
+  parameter COF_SRT=0,
   parameter SRLEN=8
 ) (
   input wire logic clk,
@@ -190,6 +196,7 @@ localparam M_D = FFT_LEN-DEC_FAC;
 
 logic signed [(COEFF_WID-1):0] coeff_ram[FFT_LEN];
 logic [$clog2(FFT_LEN)-1:0] coeff_ctr;
+logic [$clog2(FFT_LEN)-1:0] coeff_rst = COF_SRT;
 
 initial begin
   for (int i=0; i<FFT_LEN; i++) begin
@@ -205,14 +212,14 @@ logic signed [(WIDTH-1):0] mac;   // TODO: need correct width and avoid verilog 
 // buffer connection signals
 logic signed [WIDTH-1:0] loopbuf_out;
 
+// TODO: I had a rollover condition: if (coeff_ctr == (FFT_LEN-1)) coeff_ctr <= '0;
+// but I cannot remember why if the RAM is always $clog2(FFT_LEN) number of address bits deep a
+// natrual rollover shouldn't be a problem
 always_ff @(posedge clk)
   if (rst)
-    coeff_ctr <= '0;
+    coeff_ctr <= coeff_rst;
   else if (en)
-    if (coeff_ctr == (FFT_LEN-1))
-      coeff_ctr <= '0;
-    else
-      coeff_ctr <= coeff_ctr + 1;
+    coeff_ctr <= coeff_ctr - 1;
   else
     coeff_ctr <= coeff_ctr;
 

@@ -92,6 +92,8 @@ interface pe_if #(
       int hi = h;
       int symh = idx*FFT_LEN + hi;
 
+      // if there are any unknown logic values substitue for a single character
+      // instead of xxxxxx for visual debug help
       string syma;
       if (a === 'x)
         syma = unknown;
@@ -109,54 +111,64 @@ endinterface
 
 /*
   Source monitoring interface
+
+  The goal of this source monitoring interface was to provide any help possible to the OSPFB
+  monitor class to have an eye into the source needed to help verify outputs. For example, just
+  with the python verification model the main loop buffered samples to run against the golden
+  model at the end of a frame. This class could ideally do the same type of thing.
+
+  In its current form there was thinking that I needed something to count rollovers of the src
+  counter but soon realized after implementation that it wasn't going to work that way. But this
+  framework is at least in place if it was needing to be reused.
+
+  A class would have an instance of member that is the virtual class and then in the main intial
+  block this class would start the run task.
+  interface src_if #(
+    parameter MAX_CNT=32
+  ) (
+    input wire logic clk,
+    input wire logic [$clog2(MAX_CNT)-1:0] dout
+  );
+
+    class src_probe extends vsrc;
+
+      int frameCtr; // counts number of roll-over events mod MAX_CNT (e.g., FFT_LEN) at source
+
+      function new();
+        this.frameCtr = 0;
+      endfunction
+
+      function string peek();
+        return "watching the source...";
+      endfunction
+
+      function int get_frameCtr();
+        return frameCtr;
+      endfunction
+
+      function void incFrameCtr;
+        frameCtr++;
+      endfunction;
+
+      task run;
+        fork
+          forever monitorRollOver;
+        join_none // why join_none?
+      endtask
+
+      task monitorRollOver;
+        @(posedge clk);
+        $display("src clk edge monitor, %0b, %0b", dout, &(~dout));
+          if (&(~dout))
+            incFrameCtr();
+      endtask
+
+    endclass
+
+    src_probe monitor = new;
+
+  endinterface
 */
-interface src_if #(
-  parameter MAX_CNT=32
-) (
-  input wire logic clk,
-  input wire logic [$clog2(MAX_CNT)-1:0] dout
-);
-
-  class src_probe extends vsrc;
-
-    int frameCtr; // counts number of roll-over events mod MAX_CNT (e.g., FFT_LEN) at source
-
-    function new();
-      this.frameCtr = 0;
-    endfunction
-
-    function string peek();
-      return "watching the source...";
-    endfunction
-
-    function int get_frameCtr();
-      return frameCtr;
-    endfunction
-
-    function void incFrameCtr;
-      frameCtr++;
-    endfunction;
-
-    task run;
-      fork
-        forever monitorRollOver;
-      join_none // why join_none?
-    endtask
-
-    task monitorRollOver;
-      @(posedge clk);
-      $display("src clk edge monitor, %0b, %0b", dout, &(~dout));
-        if (&(~dout))
-          incFrameCtr();
-    endtask
-
-  endclass
-
-  src_probe monitor = new;
-
-endinterface
-
-
 
 /*
   interface delayline_ix #(WIDTH) (

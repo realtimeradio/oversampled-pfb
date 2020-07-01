@@ -12,15 +12,23 @@ virtual class vpe;
   pure virtual function string peek(int idx, int fft_len);
 endclass
 
-virtual class vsrc;
-  pure virtual function string peek();
-  pure virtual function int get_frameCtr();
-  pure virtual task run();
-endclass
+//virtual class vsrc;
+//  pure virtual function string peek();
+//  pure virtual function int get_frameCtr();
+//  pure virtual task run();
+//endclass
 
 //virtual class template_probe #(parameter WIDTH, type T=logic[WIDTH-1:0]);
 //  pure virtual function string poke();
 //endclass
+
+/*
+  Note: Virtual classes only need pure virtual methods declared if something is going to call
+  a method on the the virtual typed class. Otherwise a class could extend the virtual function
+  definitions. This means if there was a way to abstract out methods in the class to just
+  have their implementatio lead to calling the peek or poke method and have generally universal
+  parameter definitions then this could reduce the required virtual class definitions
+*/
 
 endpackage
 
@@ -136,11 +144,9 @@ package alpaca_ospfb_monitor_pkg;
   );
 
     pe_t pe_monitors[PTAPS];
-    vsrc source_monitor;
 
-    function new(pe_t pe[], vsrc src);
+    function new(pe_t pe[]);
       this.pe_monitors = pe;
-      this.source_monitor = src;
     endfunction
 
     function void monitor();
@@ -159,7 +165,6 @@ package alpaca_ospfb_monitor_pkg;
           macstr = {macstr, " + ", pe_monitors[i].get_mac(i)};
       end
       $display("%s\n", macstr);
-      $display("frame ctr: %0d", source_monitor.get_frameCtr());
     endfunction
 
   endclass

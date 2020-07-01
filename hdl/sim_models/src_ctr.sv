@@ -4,6 +4,8 @@
 /*
   Up/down counter simulating ramp for 'processing' and 'natural' order ramp
   implements AXIS to support back pressure to hold count value
+
+  TODO: only does proessing order need generator logic for natrual order
 */
 
 module src_ctr #(
@@ -22,28 +24,42 @@ localparam logic [WIDTH-1:0] cnt_val = (ORDER=="processing") ? -1'sb1 : 1'b1;
 logic [WIDTH-1:0] dout;
 
 // only needed for processing order source
-logic [WIDTH-1:0] highVal;
-logic en;
+generate
+  if (ORDER=="processing") begin : processing_order
+    logic [WIDTH-1:0] highVal;
+    logic en;
 
-always_ff @(posedge clk)
-  if (rst)
-    highVal <= MAX_CNT;
-  else if (m_axis.tready)
-    if (dout[$clog2(MAX_CNT)-1:0] == 1)
-      highVal <= highVal + MAX_CNT;
-    else
-      highVal <= highVal;
+    always_ff @(posedge clk)
+      if (rst)
+        highVal <= MAX_CNT;
+      else if (m_axis.tready)
+        if (dout[$clog2(MAX_CNT)-1:0] == 1)
+          highVal <= highVal + MAX_CNT;
+        else
+          highVal <= highVal;
 
-always_ff @(posedge clk)
-  if (rst)
-    dout <= rst_val;
-  else if (m_axis.tready)
-    if (dout[$clog2(MAX_CNT)-1:0] == 0)
-      dout <= highVal - 1;
-    else
-      dout <= dout + cnt_val;
-  else
-    dout <= dout;
+    always_ff @(posedge clk)
+      if (rst)
+        dout <= rst_val;
+      else if (m_axis.tready)
+        if (dout[$clog2(MAX_CNT)-1:0] == 0)
+          dout <= highVal - 1;
+        else
+          dout <= dout + cnt_val;
+      else
+        dout <= dout;
+
+  end else begin : natural_order
+    always_ff @(posedge clk)
+      if (rst)
+        dout <= rst_val;
+      else if (m_axis.tready)
+        dout <= dout + cnt_val;
+      else
+        dout <= dout;
+  end
+
+endgenerate
 
 assign m_axis.tvalid = m_axis.tready;
 assign m_axis.tdata = dout;
@@ -56,7 +72,8 @@ endmodule
    
 module pt_ctr #(
   parameter MAX_CNT=32,
-  parameter STP_CNT=24
+  parameter START=23,
+  parameter PAUSE=24
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -64,11 +81,13 @@ module pt_ctr #(
   axis.MST m_axis
 );
 
+logic [$clog2(MAX_CNT)-1:0] rst_val = START;
+
 logic [$clog2(MAX_CNT)-1:0] ctr;
 
 always_ff @(posedge clk)
   if (rst)
-    ctr <= '0;
+    ctr <= rst_val;
   else 
     ctr <= ctr + 1;
 
@@ -76,7 +95,7 @@ always_comb begin
   m_axis.tdata = s_axis.tdata; // Check the mst/slv axis handshake?
   m_axis.tvalid = 1;
   s_axis.tready = 1;
-  if (ctr > STP_CNT-1) begin
+  if (ctr > PAUSE-1) begin
     m_axis.tvalid = 0;
     s_axis.tready = 0;
   end
@@ -87,7 +106,8 @@ endmodule
 module top #(
   parameter int WIDTH = 16,
   parameter int MAX_CNT = 32,
-  parameter int STP_CNT = 24,
+  parameter int START= 23,
+  parameter int PAUSE= 24,
   parameter string ORDER = "processing"
 ) (
   input wire logic clk,
@@ -109,7 +129,8 @@ module top #(
   
   pt_ctr #(
     .MAX_CNT(MAX_CNT),
-    .STP_CNT(STP_CNT)
+    .START(START),
+    .PAUSE(PAUSE)
   ) pt_ctr_inst (
     .clk(clk),
     .rst(rst),
@@ -126,9 +147,11 @@ endmodule
 import alpaca_ospfb_utils_pkg::*;
 module test_src_ctr;
 
-parameter MAX_CNT = 8;
-parameter STP_CNT = 6;
-
+// emulates OSPFB parameters
+parameter MAX_CNT = 64;     // M
+parameter PAUSE = 48;       // D
+parameter START = PAUSE-1; // D-1 modtimer starting value in ospfb.py
+parameter ORDER = "natural";
 logic clk, rst;
 axis #(.WIDTH(WIDTH)) mst();
 
@@ -137,8 +160,9 @@ axis #(.WIDTH(WIDTH)) mst();
 top #(
   .WIDTH(WIDTH),
   .MAX_CNT(MAX_CNT),
-  .STP_CNT(STP_CNT),
-  .ORDER("processing")
+  .START(START),
+  .PAUSE(PAUSE),
+  .ORDER(ORDER)
 ) DUT (
   .clk(clk),
   .rst(rst),
@@ -163,12 +187,12 @@ initial begin
 
   for (int k=0; k < 8; k++) begin
 
-    for (int i=0; i < STP_CNT; i++) begin
+    for (int i=0; i < PAUSE; i++) begin
       wait_cycles(1);
       $display(mst.print());
     end
 
-    for (int i=0; i < (MAX_CNT-STP_CNT); i++) begin
+    for (int i=0; i < (MAX_CNT-PAUSE); i++) begin
       wait_cycles(1);
       $display(mst.print());
     end
