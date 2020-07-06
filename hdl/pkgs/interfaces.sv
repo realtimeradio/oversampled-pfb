@@ -45,8 +45,10 @@ interface sr_if #(
     string srfmt;
 
     function new();
+      string bitfmt = (WIDTH==1) ? "b" : "X";
+      string bitid  = (WIDTH==1) ? "b" : "h";
       // what to do about sample size WIDTH
-      this.srfmt = $psprintf("0x%%%0d%0s", SRLEN, "X");
+      this.srfmt = $psprintf("0%s%%%0d%0s ", bitid, SRLEN, bitfmt);
     endfunction
 
     function string peek();

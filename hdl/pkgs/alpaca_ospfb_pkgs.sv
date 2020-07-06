@@ -38,22 +38,29 @@ package alpaca_ospfb_monitor_pkg;
 
   parameter LINE_WIDTH=8;
 
-  typedef probe #(.WIDTH(WIDTH), .DEPTH(SRLEN))   sr_probe_t;
-  typedef probe #(.WIDTH(WIDTH), .DEPTH(SRLEN-1)) hsr_probe_t;
-  typedef probe #(.WIDTH(WIDTH), .DEPTH(1))       hr_probe_t;
+  // TODO: the valid buffer is 1 bit wide and so a different type would be required. This adds
+  // the WIDTH parameter to the DelayBufMonitor. Having this requirement is more verbose code.
+  // Is there away to not have so many typedefs or is this parameter approach the best for now?
+  //typedef probe #(.WIDTH(WIDTH), .DEPTH(SRLEN))   sr_probe_t;
+  //typedef probe #(.WIDTH(WIDTH), .DEPTH(SRLEN-1)) hsr_probe_t;
+  //typedef probe #(.WIDTH(WIDTH), .DEPTH(1))       hr_probe_t;
 
-  class DelayBufMonitor #(parameter DEPTH, parameter SRLEN); //parameter WIDTH);
-    //probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_h[DEPTH/SRLEN-1];
-    //probe #(.WIDTH(WIDTH), .DEPTH(SRLEN-1)) hsr_h;
-    //probe #(.WIDTH(WIDTH), .DEPTH(1)) hr_h;
+  class DelayBufMonitor #(parameter DEPTH, parameter SRLEN, parameter WIDTH);
+    probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_h[DEPTH/SRLEN-1];
+    probe #(.WIDTH(WIDTH), .DEPTH(SRLEN-1)) hsr_h;
+    probe #(.WIDTH(WIDTH), .DEPTH(1)) hr_h;
 
-    sr_probe_t  sr_h[DEPTH/SRLEN-1]; // handle for NUM-1 shift registers
-    hsr_probe_t hsr_h;  // handle for SRLShiftReg for head reg
-    hr_probe_t  hr_h;   // handle for delay buf head reg 
+    //sr_probe_t  sr_h[DEPTH/SRLEN-1]; // handle for NUM-1 shift registers
+    //hsr_probe_t hsr_h;  // handle for SRLShiftReg for head reg
+    //hr_probe_t  hr_h;   // handle for delay buf head reg
 
-    function new(hr_probe_t headReg,
-                 hsr_probe_t headShiftReg,
-                 sr_probe_t shiftRegs[]);
+    //function new(hr_probe_t headReg,
+    //             hsr_probe_t headShiftReg,
+    //             sr_probe_t shiftRegs[]);
+
+    function new(probe #(.WIDTH(WIDTH), .DEPTH(1)) headReg,
+                 probe #(.WIDTH(WIDTH), .DEPTH(SRLEN-1)) headShiftReg,
+                 probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) shiftRegs[]);
       this.hr_h  = headReg;
       this.hsr_h = headShiftReg;
       this.sr_h  = shiftRegs;
@@ -74,23 +81,27 @@ package alpaca_ospfb_monitor_pkg;
 
   typedef DelayBufMonitor #(
       .DEPTH(2*FFT_LEN),
-      .SRLEN(SRLEN)
+      .SRLEN(SRLEN),
+      .WIDTH(WIDTH)
     ) databuf_t;
 
 
   typedef DelayBufMonitor #(
       .DEPTH(FFT_LEN-DEC_FAC),
-      .SRLEN(SRLEN)
+      .SRLEN(SRLEN),
+      .WIDTH(WIDTH)
   ) loopbuf_t;
 
   typedef DelayBufMonitor #(
       .DEPTH(FFT_LEN),
-      .SRLEN(SRLEN)
+      .SRLEN(SRLEN),
+      .WIDTH(WIDTH)
     ) sumbuf_t;
 
   typedef DelayBufMonitor #(
       .DEPTH(FFT_LEN),
-      .SRLEN(SRLEN)
+      .SRLEN(SRLEN),
+      .WIDTH(1)
     ) vldbuf_t;
 
   class PeMonitor #(
@@ -124,6 +135,10 @@ package alpaca_ospfb_monitor_pkg;
       return loopbuf.print_reg();
     endfunction
 
+    function string print_vldbuf();
+      return vldbuf.print_reg();
+    endfunction
+
     function string get_mac(int idx);
       return mac.peek(idx, FFT_LEN);
     endfunction
@@ -152,11 +167,13 @@ package alpaca_ospfb_monitor_pkg;
     function void monitor();
       string macstr = "";
       for (int i=0; i < $size(pe_monitors); i++) begin
+        string clr = (i%2) ? RST : MGT;
         // Show delay buffer contents
-        // $display("PE #%0d", i);
-        // $display({"loopbuf: ", pe_monitors[i].print_loopbuf()});
-        // $display({"databuf: ", pe_monitors[i].print_databuf()});
-        // $display({"sumbuf : ", pe_monitors[i].print_sumbuf(), "\n"});
+        $display({clr, "PE #%0d", RST}, i);
+        $display({clr, "loopbuf: ", pe_monitors[i].print_loopbuf(), RST, "\n"});
+        $display({clr, "databuf: ", pe_monitors[i].print_databuf(), RST, "\n"});
+        $display({clr, "sumbuf : ", pe_monitors[i].print_sumbuf(), RST, "\n"});
+        $display({clr, "vldbuf : ", pe_monitors[i].print_vldbuf(), RST, "\n"});
 
         // Format symbolic polyphase fir summation string
         if (i==0)

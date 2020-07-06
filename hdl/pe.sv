@@ -85,7 +85,7 @@ always_comb begin
 
   // TODO: what is the right thing to do here... for the output
   m_axis.tvalid = vout;
-  m_axis.tdata  = dout;
+  m_axis.tdata  = sout;
 
   /*
      TODO: where to use m_axis.tready for debug monitoring of slave. If m_axis.tready isn't used

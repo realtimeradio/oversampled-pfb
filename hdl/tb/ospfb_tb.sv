@@ -71,9 +71,15 @@ pe_t pe_h[PTAPS];
   Instead to get the correct handle I needed to create a packed array to store all the handles
   at one time.
 */
-sr_probe_t sr_sumbuf_h[PTAPS][NUM];
-sr_probe_t sr_databuf_h[PTAPS][DATA_NUM];
-sr_probe_t sr_loopbuf_h[PTAPS][LOOP_NUM];
+//sr_probe_t sr_sumbuf_h[PTAPS][NUM];
+//sr_probe_t sr_databuf_h[PTAPS][DATA_NUM];
+//sr_probe_t sr_loopbuf_h[PTAPS][LOOP_NUM];
+
+import alpaca_ospfb_ix_pkg::probe;
+probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_sumbuf_h[PTAPS][NUM];
+probe #(.WIDTH(1), .DEPTH(SRLEN))     sr_vldbuf_h[PTAPS][NUM];
+probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_loopbuf_h[PTAPS][LOOP_NUM];
+probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_databuf_h[PTAPS][DATA_NUM];
 
 genvar pp;
 genvar mm;
@@ -82,6 +88,7 @@ generate
     for (mm=0; mm < NUM; mm++) begin
       initial begin
         sr_sumbuf_h[pp][mm] = DUT.fir.pe[pp].sumbuf.gen_delay.sr[mm].probe.monitor;
+        sr_vldbuf_h[pp][mm] = DUT.fir.pe[pp].validbuf.gen_delay.sr[mm].probe.monitor;
       end
     end
 
@@ -104,6 +111,10 @@ generate
                             DUT.fir.pe[pp].sumbuf.headSR.probe.monitor,
                             sr_sumbuf_h[pp]);
 
+      pe_h[pp].vldbuf = new(DUT.fir.pe[pp].validbuf.probe.monitor,
+                            DUT.fir.pe[pp].validbuf.headSR.probe.monitor,
+                            sr_vldbuf_h[pp]);
+
       pe_h[pp].databuf = new(DUT.fir.pe[pp].databuf.probe.monitor,
                              DUT.fir.pe[pp].databuf.headSR.probe.monitor,
                              sr_databuf_h[pp]);
@@ -122,24 +133,60 @@ parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
 string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
 
 initial begin
+
+  // read in golden data
+  logic signed [WIDTH-1:0] golden[];
+  logic signed [WIDTH-1:0] gin;
+  automatic int nread = 0;
+  automatic int size = 100;
+  int fp;
+  int err;
+
   ospfb_t ospfb;
   int errors;
+  int gidx;
+  logic signed [WIDTH-1:0] gval;
 
+  fp = $fopen("/home/mcb/git/alpaca/oversampled-pfb/python/golden_ctr.dat", "rb");
+  golden = new[size];
+
+  if (!fp) begin
+    $display("could not open data file...");
+    $finish;
+  end
+
+  while(!$feof(fp)) begin
+    err = $fscanf(fp, "%u", gin);
+    golden[nread++] = gin;
+    if (nread == size-1) begin
+      size+=100;
+      golden = new[size](golden);
+    end
+  end
+  $fclose(fp);
+    
   ospfb = new(pe_h);
   errors = 0;
+  gidx = 0;
 
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
   rst <= 1;
+  wait_cycles(299); // reset the pipeline
   @(posedge clk);
   @(negedge clk) rst = 0; en = 1;
 
   $display("Cycle=%4d: Finished init...", simcycles);
-  for (int i=0; i < 6*FFT_LEN+1; i++) begin
+  for (int i=0; i < 10*FFT_LEN+1; i++) begin
     wait_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), mst.print(), RST);
     ospfb.monitor();
+    gval = golden[gidx++];
+    if (mst.tdata != gval) begin
+      errors++;
+      $display("%s{expected: 0x%0x, observed: 0x%0x}%s", RED, mst.tdata, gval, RST);
+    end
   end
 
   $display("*** Simulation complete: Errors=%4d ***", errors);
