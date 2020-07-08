@@ -559,7 +559,7 @@ class sink:
   verification
   """
 
-  def __init__(self, M, D, P, init=None, order='reversed'):
+  def __init__(self, M, D, P, init=None, order='processing'):
     # OS PFB parameters
     self.M = M
     self.P = P
@@ -570,8 +570,19 @@ class sink:
     self.shifts = [-(s*D) % M for s in range(0, self.S)]
 
     # output processing order
-    # reversed - processing order (port M-1 down to zero, newest to oldest)
-    # natrual  - parallel or natrual order (port 0 to M, oldest to newest)
+    # processing - reversed or processing order (output port M-1 down to zero, newest to oldest) (x7, x6, .., x0, x15, x4, ..., x8)
+    # natrual    - parallel or natrual order (output port 0 to M, oldest to newest) (x0, x1, x2, ..., x8, x9, x10, ...)
+    #
+    # The distinction on ordering was primiarily created for verifying the connection between the
+    # phase compensation and FFT of the ospfb. This is because the input to most FFTs assumes natural
+    # ordered samples but the outputs from the polyphase fir are pulled off from the output port M-1 down to zero (processing order)
+    # and needs to be converted to natural for the FFT.
+    # The sink and source classess subsequently had an ordering parameter added so that the same class can be used to verify both
+    # the polyphase fir and the phase compensator independent of each other. More specifically it was found that processing order
+    # was easier to use to verify the phase compensator and natural ordering for the polyphase fir.
+    # Since the ordering also determines how samples are created this means that in terms of verifying the whole polyphase FIR and
+    # and phase compensator together only natural ordered inputs has been used. This makes the most sense since samples are delivered
+    # sequentially in natrual fashion (x0, x1, x2, ..., etc.)
     self.order = order
 
     # determine the decimated time sample (n*D) and branch index that the initial
@@ -604,7 +615,7 @@ class sink:
       self.m = self.startbranch[1]  # branch index
     else:
       self.n = 0
-      if order == "reversed":
+      if order == "processing":
         self.m = self.M-1
       else:
         self.m = 0
@@ -645,7 +656,7 @@ class sink:
 
     yex = "y{}".format(rs+self.n*self.M)
 
-    if self.order == "reversed":
+    if self.order == "processing":
       # output ordered from port M-1 down to zero
       if self.m==0:
         self.n += 1
