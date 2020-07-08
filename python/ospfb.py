@@ -2,15 +2,7 @@ import sys
 import numpy as np
 
 from phasecomp import PhaseComp
-
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
-from utils import pltOSPFBChannels
-from utils import pltCoarseSpectrum
-from utils import pltCompareFine
-from utils import pltCompareSxx
-
-from taps import (CyclicRampTaps, SymTaps, HannWin)
-from source import (ToneSource, SymSource)
 
 def minTuple(t):
   m = (0,0)
@@ -31,7 +23,7 @@ class OSPFB:
     the design methodolgy.
   """
 
-  def __init__(self, M, D, P, taps, initval, dt='str', followHistory=False):
+  def __init__(self, M, D, P, taps, initval=None, dt='str', followHistory=False):
     """
       M - Polyphase branches (Transform size)
 
@@ -42,6 +34,8 @@ class OSPFB:
 
       taps - a numpy array with data type matching dt. Error otherwise
 
+      TODO: initval seems to be deprecated and so the capability to replicate it
+      needs to be added elsewhere, either in the symboli sink or symbolic source...
       initval - starting symbolic sample index (e.g., -11 for 'x-11', or 0 for 'x0'
 
       When using values other than '0' three changes must be made to correctly
@@ -739,6 +733,9 @@ def computeLatency(P, M, D):
 
 
 if __name__ == "__main__":
+  from taps import (CyclicRampTaps, SymTaps, HannWin)
+  from source import (ToneSource, SymSource)
+
   print("**** Software OS PFB Symbolic Hardware Simulation ****")
 
   # simulation data type

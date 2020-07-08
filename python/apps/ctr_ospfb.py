@@ -17,9 +17,8 @@ if __name__=="__main__":
   Tend = 1000
   SIM_DT = 'int16'
 
-  initval = 0
   taps = CyclicRampTaps.genTaps(M, P, D)
-  ospfb = OSPFB(M=M, D=D, P=P, taps, initval=initval, dt=SIM_DT, followHistory=False)
+  ospfb = OSPFB(M=M, D=D, P=P, taps=taps, dt=SIM_DT, followHistory=False)
   ospfb.enable()
 
   src = CounterSource(M=M, order="natural")
