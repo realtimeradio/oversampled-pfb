@@ -42,8 +42,8 @@ class PhaseComp:
     # To add some more information, the shift direction is also affected by how
     # the data are filling into the memory. If we are doing processing order the correct
     # output is read out of the bottom of the memory.
-    #self.shifts = [-(s*D) % M for s in range(0, self.S)] # correct
-    self.shifts = [(s*D) % M for s in range(0, self.S)]  # developed (notes are written with this case and they sink only may work with this)
+    self.shifts = [-(s*D) % M for s in range(0, self.S)] # correct
+    #self.shifts = [(s*D) % M for s in range(0, self.S)]  # developed (notes are written with this case and they sink only may work with this)
     self.stateIdx = 0
 
     # ping pong buffer

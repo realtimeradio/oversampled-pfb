@@ -26,6 +26,7 @@ TYPES_INIT = {
 TYPES_STR_FMT = {
   'str'   : ':<4s',
   'int'   : ':<4d',
+  'int16' : ':<4d',
   'cx'    : ':<4g',
 }
 
