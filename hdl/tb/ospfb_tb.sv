@@ -147,14 +147,13 @@ initial begin
   int gidx;
   logic signed [WIDTH-1:0] gval;
 
-  fp = $fopen("/home/mcb/git/alpaca/oversampled-pfb/python/golden_ctr.dat", "rb");
-  golden = new[size];
-
+  fp = $fopen("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr.dat", "rb");
   if (!fp) begin
     $display("could not open data file...");
     $finish;
   end
 
+  golden = new[size];
   while(!$feof(fp)) begin
     err = $fscanf(fp, "%u", gin);
     golden[nread++] = gin;
@@ -163,6 +162,7 @@ initial begin
       golden = new[size](golden);
     end
   end
+  --nread; // subtract off the last increment
   $fclose(fp);
     
   ospfb = new(pe_h);
@@ -177,7 +177,7 @@ initial begin
   @(negedge clk) rst = 0; en = 1;
 
   $display("Cycle=%4d: Finished init...", simcycles);
-  for (int i=0; i < 10*FFT_LEN+1; i++) begin
+  for (int i=0; i < nread; i++) begin // 10*FFT_LEN+1; i++) begin
     wait_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), mst.print(), RST);
