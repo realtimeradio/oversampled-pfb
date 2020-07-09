@@ -1,31 +1,19 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// display constants
-`define RED "\033\[0;31m"
-`define GRN "\033\[0;32m"
-`define RST "\033\[0m"
-
 import alpaca_ospfb_utils_pkg::*;
-
-parameter  PERIOD = 10;                   // simulation clk period [ns]
-
-parameter int  FFT_LEN = 2048;              // (M) Polyphase branches
-parameter real OSRATIO = 3.0/4.0;         // (D/M) inverse oversample ratio
-parameter int  DEC_FAC = FFT_LEN*OSRATIO; // (D) Decimation factor
 
 parameter int DEPTH = FFT_LEN*2;          // 2M
 parameter int WIDTH = 32;                 // sample bit width
 
+parameter int GCD = gcd(FFT_LEN, DEC_FAC);
+parameter int NUM_STATES = FFT_LEN/GCD;
 
 module phasecomp_tb();
 
 // simulation signals
 logic clk, rst;
 logic [WIDTH-1:0] din, dout; // din will start off as a simple counter
-
-parameter int GCD = gcd(FFT_LEN, DEC_FAC);
-parameter int NUM_STATES = FFT_LEN/GCD;
 
 // instantiate DUT
 PhaseComp #(
@@ -46,80 +34,6 @@ function automatic void chkram();
   end
   $display("");
 endfunction // chkram
-
-function automatic int mod(input int x, M);
-  if (x < 0)
-    x = x+M;
-  return x % M;
-endfunction
-
-
-//function automatic int outputTruth(input int n, m, r, M);
-//  return n*M + mod((m-r),M);
-//endfunction
-
-class Source;
-  int M, i, modtimer;
-
-  // constructor
-  function new(int M);
-    this.M = M;
-    i = 1; // processing order
-    // i = 0; // natural order
-    modtimer = 0; 
-  endfunction
-
-  // class methods
-  function int createSample();
-    int dout = i*M - modtimer - 1; // processing order
-    // int dout = i*M + modtimer; // natural order
-    // increment meta data
-    modtimer = (modtimer + 1) % M;
-    i = (modtimer == 0) ? i+1 : i;
-    return dout;
-  endfunction
-endclass // Source
-
-
-// TODO: I am also doing something wrong because Source and Sink are almost
-// identical... there should be a better way for reuse...
-class Sink;
-  int M, m, n, r, modtimer, NStates;
-  int shiftStates[];
-
-  // constructor
-  function new(int M);
-    this.M = M;
-    n = 0;          // decimated time sample
-    r = 0;          // current state index
-    modtimer = 0;   // right now, a mod counter to keep track AND the branch index
-
-    NStates = NUM_STATES;
-    shiftStates = new[NStates];
-    genShiftStates(shiftStates, FFT_LEN, DEC_FAC);
-  endfunction
-
-  // TODO: should we have a check output method or just return a value? i.e.,
-  // outputTruth method?  I am iffy on how we would be expecting branch order on
-  // the output... I had this nailed down at one point but am since confused
-  // again...
-  function int outputTruth();
-    // man... I am really shooting myself in the foot here with these variable
-    // scope issues...  but why should i... isn't it just like python... just
-    // get used to it...
-    int dout = n*M + mod((modtimer-shiftStates[r]), M);
-
-    // increment meta data 
-    modtimer = (modtimer + 1) % M;
-    if (modtimer == 0) begin
-      n = n+1;
-      r = (r+1) % NStates;
-    end
-
-    return dout;
-  endfunction
-
-endclass //Sink
 
 task wait_cycles(input int cycles=1);
   repeat(cycles)
@@ -143,15 +57,14 @@ initial begin
   end
 end
 
-
-// begin simulation
+// main initial block
 int truth;
 int errors;
 initial begin
   Source s;
   Sink   k;
   s = new(FFT_LEN);
-  k = new(FFT_LEN);
+  k = new(FFT_LEN, NUM_STATES);
   errors = 0;
 
   $display("Cycle=%4d: **** Starting PhaseComp test bench ****", simcycles);
@@ -193,9 +106,9 @@ initial begin
     truth = k.outputTruth();
     if (truth != dout) begin
       errors++;
-      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s\n", `RED, simcycles, truth, dout, `RST);
+      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s\n", RED, simcycles, truth, dout, RST);
     end else begin
-      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s\n", `GRN, simcycles, truth, dout, `RST);
+      $display("%sCycle=%4d: {expected: 0x%04X, observed: 0x%04X}%s\n", GRN, simcycles, truth, dout, RST);
     end
 
   end

@@ -9,10 +9,10 @@ parameter GRN = "\033\[0;32m";
 parameter MGT = "\033\[0;35m";
 parameter RST = "\033\[0m";
 
-parameter PERIOD = 10;
+parameter PERIOD = 10;          // simulation clock period
 
-parameter WIDTH = 16;
-parameter COEFF_WID = 16;
+parameter WIDTH = 16;           // sample width
+parameter COEFF_WID = 16;       // filter coefficient width
 
 // TODO: FFT_LEN-DEC_FAC an issue here because need to build out the correct length
 parameter SRLEN = 4;
@@ -54,9 +54,6 @@ function automatic void genShiftStates(ref int states[], input int M, D);
   for (int i=0; i < states.size; i++)
     states[i] = (i*D) % M;
 endfunction
-
-class DB_Monitor;
-endclass
 
 class Source;
   int M, i, modtimer;
