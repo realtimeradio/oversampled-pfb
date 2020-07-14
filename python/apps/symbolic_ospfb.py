@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
   taps = SymTaps.genTaps(M, P, D)
 
-   # TODO: it looks initval is really just depricated since the ospfb doesn't produce the
+  # TODO: it looks initval is really just depricated since the ospfb doesn't produce the
   # symbolic inputs anymore. As discussed below there was a capability for symbolic processing
   # to have control over the starting input symbolic sample and when to start looking at which
   # output sample and branch that first input sample appears on. The capabiliyt to do this may

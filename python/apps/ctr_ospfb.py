@@ -30,6 +30,8 @@ if __name__=="__main__":
 
     peout, pe_firout = ospfb.step(np.int16(din))
     fp.write(struct.pack('h', pe_firout))
-    fp.write(struct.pack('h', 0xa))
+    fp.write(struct.pack('h', 0x20)) # space ' ' character
+    fp.write(struct.pack('h', peout[1]))
+    fp.write(struct.pack('h', 0xa)) # new line character, '\n'
 
   fp.close() 

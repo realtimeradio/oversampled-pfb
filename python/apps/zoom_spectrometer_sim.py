@@ -27,7 +27,7 @@ if __name__=="__main__":
 
   # second stage parameters
   NFFT_FINE = 128
-  FINE_FRAMES = 2
+  FINE_FRAMES = 20
   PLT_BETWEEN_FRAME=False
 
   taps = HannWin.genTaps(M, P, D)

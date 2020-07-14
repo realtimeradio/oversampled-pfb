@@ -145,7 +145,6 @@ class OSPFB:
     self.cycle = 0
     self.run = False
 
-
     # initialize PEs elements
     self.PEs = [pe(idx=1, M=M, D=D,
                     taps=self.taps[M-1::-1],
@@ -161,6 +160,7 @@ class OSPFB:
     # initialize phase compensation block
     self.pc = PhaseComp(M=self.M, D=self.D,
                         dt=dt,
+                        initPhaseRot=True,
                         keepHistory=self.followHistory)
 
     self.strfmt = "T={{{:s}}} in:({{{:s}}}, {{}}), firout: ({{{:s}}}), out:({{{:s}}}, {{{:s}}}, {{}})"
@@ -207,12 +207,16 @@ class OSPFB:
     firout = peout[1]
     # the last output of the PE is then input to the phase compensation prior to
     # the FFT
-    # TODO: enable calculation should be replaced with a valid signal at the
-    # input. Currently the valid buffers are length 2*M but I am getting a
-    # little more convinced that it should be M. See notes.
-    en = self.M*(self.P-1)+2
+
+    en = 1
+    # symbolic simulation support TODO: can this be removed like with numeric processing? so that
+    # the phase comp is then always running?
+    if self.dt == 'str':
+     en = self.M*(self.P-1)+1
+
     if (self.cycle) >= en:
       peout = self.pc.step(peout[0], peout[1], peout[2])
+
     return (peout, firout)
 
   def valid(self):
@@ -267,7 +271,7 @@ class pe:
     self.delaybuf = ringbuffer(length=(M-D), dt=dt)
     self.databuf  = ringbuffer(length=2*M, dt=dt)
     # TODO: current hardware implementation uses M, original symbolic used 2M. Tests seem to show that
-    # (M-D), M, 2*M, and any multiple of M all work -- what is the correct value to use. Leaving at M now
+    # (M-D)(check this one), M, 2*M, and any multiple of M all work -- what is the correct value to use. Leaving at M now
     # because we want to match the hardware implementation to compare to.
     self.validbuf = ringbuffer(length=M, load=["False" for i in range(0,M)], dt=dt)
 

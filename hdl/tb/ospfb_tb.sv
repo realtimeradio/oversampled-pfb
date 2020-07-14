@@ -59,7 +59,7 @@ initial begin
   clk <= 0; simcycles=0;
   forever #(PERIOD/2) begin
     clk = ~clk;
-    simcycles += (1 & clk);
+    simcycles += (1 & clk) & ~rst;
   end
 end
 
@@ -135,7 +135,8 @@ string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
 initial begin
 
   // read in golden data
-  logic signed [WIDTH-1:0] golden[];
+  logic signed [WIDTH-1:0] fir_golden[];
+  logic signed [WIDTH-1:0] out_golden[];
   logic signed [WIDTH-1:0] gin;
   automatic int nread = 0;
   automatic int size = 100;
@@ -153,19 +154,24 @@ initial begin
     $finish;
   end
 
-  golden = new[size];
+  fir_golden = new[size];
+  out_golden = new[size];
   while(!$feof(fp)) begin
     err = $fscanf(fp, "%u", gin);
-    golden[nread++] = gin;
+    fir_golden[nread] = gin;
+    err = $fscanf(fp, "%u", gin);
+    out_golden[nread++] = gin;
     if (nread == size-1) begin
       size+=100;
-      golden = new[size](golden);
+      fir_golden = new[size](fir_golden);
+      out_golden = new[size](out_golden);
     end
   end
   --nread; // subtract off the last increment
   $fclose(fp);
     
-  ospfb = new(pe_h);
+  ospfb = new(pe_h); //, DUT.phasecomp_inst.probe.monitor);
+  //ospfb.pc_monitor = DUT.phasecomp_inst.probe.monitor;
   errors = 0;
   gidx = 0;
 
@@ -182,10 +188,12 @@ initial begin
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), mst.print(), RST);
     ospfb.monitor();
-    gval = golden[gidx++];
+    gval = out_golden[gidx++];
     if (mst.tdata != gval) begin
       errors++;
-      $display("%s{expected: 0x%0x, observed: 0x%0x}%s", RED, mst.tdata, gval, RST);
+      $display("%s{expected: 0x%0x, observed: 0x%0x}%s", RED, gval, mst.tdata, RST);
+    end else begin
+      $display("%s{expected: 0x%0x, observed: 0x%0x}%s", GRN, gval, mst.tdata, RST);
     end
   end
 

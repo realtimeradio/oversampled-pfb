@@ -2,21 +2,13 @@ import numpy as np
 from source import CounterSource, SymSource
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
 
-  # TODO: The phase compensation operation was not written using the SFG
-  # formulation as was the polyphase FIR. As such there is no PE definition and
-  # there isn't any other data/valid buffers. At this I am wanting to know what
-  # I should add... I am thinking of just implementing the data and valid
-  # buffers out of consistency.
+  # TODO: phase compensation not developed using SFG methodology. Not sure there
+  # is any benefit to doing it, but if the approach were to yield PEs it may
+  # provide for a more concise straight forward implementation.
 
-  # in ospfb the class that contains all the buffers is called the PE and then
-  # the OSPFB class steps through each PE and the step function operates on all
-  # the PEs. Should I rename and change the approach?
+  # TODO: For numeric simulations valid/data rotation buffers are not needed
+  # data buffers may be nice for other commensual on FPGA modes (correlator/raw voltage)
 
-  # Also, do we really need a valid buffer? For sure we do not need it in the
-  # same way we do for the polyphase FIR because after the latency of the FIR
-  # then every sample will be valid. In addition the data are not needed becuase
-  # when we get to hooking this up to the FFT there is no where in the Xilinx
-  # FFT to do something with the data.
 class PhaseComp:
   """
   Phase compensation operation for the oversampled polyphase FIR
@@ -26,7 +18,30 @@ class PhaseComp:
   kernel for the M-Pt FFT
   """
 
-  def __init__(self, M=8, D=6, dt='str', keepHistory=False):
+  def __init__(self, M=8, D=6, dt='str', initPhaseRot=True, keepHistory=False):
+    """
+      TODO: extend initPhaseRot to accept valid arbitray initial rotation state and
+      effective read/write commutated port.
+
+      TODO: initPhaseRot currently breaks symbolic simulations
+
+      initPhaseRot : Bool - The input/output of the phase compensation buffer is modeled
+      as a commutator of the input ports of a parallel structure to realize the decimation
+      operation. In general decimators can start at arbitrary sample index. This parameter
+      would provide control to allow for starting at a valid shift state index and port pair.
+
+        True - initialize phase to be compatible with the conventional causal
+        ospfb starting decimator phase. This is port zero. Symbolically the first sample
+        is x0 and every other sample in the ospfb is anti-causal and so therefore the next
+        step rolls us over into port M-1 of the next phase state
+
+        False - give no initialization, everything defaults to zero (state index, stkA and
+        stkB address pointers) effectively starting with zero shift offset and writing/reading
+        port M-1/0 down/up to 0/M-1. (The phasecomp job is to take outputs from the polyphase
+        fir ports from processing order M-1 down to zero to natural order 0 to M-1 for the FFT
+        expecting natural ordered input. So the input is from M-1 to 0 and the output is the
+        other way around 0 to M-1, hence the / notation).
+    """
     # container data type
     self.dt = dt
 
@@ -44,7 +59,6 @@ class PhaseComp:
     # output is read out of the bottom of the memory.
     self.shifts = [-(s*D) % M for s in range(0, self.S)] # correct
     #self.shifts = [(s*D) % M for s in range(0, self.S)]  # developed (notes are written with this case and they sink only may work with this)
-    self.stateIdx = 0
 
     # ping pong buffer
     # TODO: how long does the data/valid buffers need to be? M sounds about
@@ -57,6 +71,52 @@ class PhaseComp:
     # meta data
     self.modCounter = 0
     self.cycle = 0
+
+    # Initialize phase of the stack
+    # TODO: would be better include something to ppbuf constructor
+    if not initPhaseRot:
+      self.stateIdx = 0
+    else:
+      self.stateIdx = self.S-1
+
+      # The choice to setA first here is arbitrary, just wanted to have it match
+      # the initalize to zero state after the first step when first debugging this
+
+      # ppbuf
+      # stack A to have one sample loaded
+      self.pp.setA = True
+      self.pp.stkA.top = self.M-1
+      self.pp.stkA.bottom = 0
+      self.pp.stkA.empty = False
+
+      # stack B to get one sample read
+      self.pp.stkB.bottom = self.shifts[self.stateIdx]
+      self.pp.stkB.top = self.pp.stkB.bottom+1
+      self.pp.stkB.empty = False
+
+      # databuf
+      # stack A to have one sample loaded
+      self.pp.setA = True
+      self.pp.stkA.top = self.M-1
+      self.pp.stkA.bottom = 0
+      self.pp.stkA.empty = False
+
+      # stack B to get one sample read
+      self.pp.stkB.bottom = self.shifts[self.stateIdx]
+      self.pp.stkB.top = self.pp.stkB.bottom+1
+      self.pp.stkB.empty = False
+
+      # validbuf
+      # stack A to have one sample loaded
+      self.pp.setA = True
+      self.pp.stkA.top = self.M-1
+      self.pp.stkA.bottom = 0
+      self.pp.stkA.empty = False
+
+      # stack B to get one sample read
+      self.pp.stkB.bottom = self.shifts[self.stateIdx]
+      self.pp.stkB.top = self.pp.stkB.bottom+1
+      self.pp.stkB.empty = False
 
     #self.keepHistory = keepHistory
     #self.sumhist = None
@@ -72,9 +132,9 @@ class PhaseComp:
     the correct order.
     """
 
-    # sout "sum out" is left over from the PFB need to think about how the
-    # variable name should change here. But for now keeping sout to be the
-    # output of the operation just to be consistent.
+    # TODO: sout "sum out" is left over from the PFB need to think about how the
+    # variable name should change here. But for now keeping sout to be the output
+    # of the operation just to be consistent.
     sout = TYPES_INIT[self.dt]
     dout = TYPES_INIT[self.dt]
     vout = TYPES_INIT['bool']
@@ -257,10 +317,6 @@ class stack:
     self.length = length # +1 potentially need to add a dummy space (address) to help at top in HDL
 
     self.buf = np.full(length, TYPES_INIT[dt], dtype=TYPES_MAP[dt])
-    #self.buf = np.zeros(length, self.dt)
-    # will need a generic empty data generator depending on the data type so
-    # that switching between symbolic and numeric modes works
-    #self.buf = ["-" for i in range(0, self.length)]
 
   def reset(self):
     self.buf = np.full(self.length, TYPES_INIT[self.dt], dtype=TYPES_MAP[self.dt])

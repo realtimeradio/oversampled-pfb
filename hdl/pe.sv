@@ -23,10 +23,10 @@ module OSPFB #(
 logic [$clog2(FFT_LEN)-1:0] modtimer;           // decimator phase
 logic [$clog2(FFT_LEN)-1:0] rst_val = SRT_PHA;  // starting decimator phase (which port gets first sample)
 
-
-
 logic vin;
 logic signed [WIDTH-1:0] din;
+
+logic signed [WIDTH-1:0] pc_in;
 
 logic vout;
 logic signed [WIDTH-1:0] dout;
@@ -64,7 +64,18 @@ datapath #(
   .din(din),
   .vout(vout),
   .dout(dout),
-  .sout(sout)
+  .sout(pc_in)
+);
+
+PhaseComp #(
+  .WIDTH(WIDTH),
+  .DEPTH(2*FFT_LEN),
+  .DEC_FAC(DEC_FAC)
+) phasecomp_inst (
+  .clk(clk),
+  .rst(rst),
+  .din(pc_in),
+  .dout(sout)
 );
 
 typedef enum logic {FORWARD, FEEDBACK, ERR='X} stateType;
@@ -77,7 +88,7 @@ always_ff @(posedge clk)
 always_comb begin
   // default values to prevent latch inferences
   ns = ERR;
-  din = 32'haabbccdd; //should never see this value, error if so
+  din = 32'haabbccdd; //should never see this value, if so it is an error
 
   // ospfb.py top-level equivalent producing the vin to start the process
   // why modtimer < dec_fac and not dec_fac-1 like in src counter pass through?
