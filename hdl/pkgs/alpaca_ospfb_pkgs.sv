@@ -2,10 +2,15 @@
 
 package alpaca_ospfb_ix_pkg;
 
+// TODO: food for thought on making more abstract, templated probes...
+//virtual class poker #(type T);
+//  pure virtual function T getter();
+//endclass
+
 virtual class probe #(parameter WIDTH, parameter DEPTH);
   pure virtual function string peek();
   pure virtual function string poke();
-  pure virtual function logic[DEPTH*WIDTH-1:0]  get_sr();
+  //pure virtual function logic[DEPTH*WIDTH-1:0]  get_sr();
 endclass
 
 virtual class vpe;
@@ -28,6 +33,8 @@ endclass
   definitions. This means if there was a way to abstract out methods in the class to just
   have their implementatio lead to calling the peek or poke method and have generally universal
   parameter definitions then this could reduce the required virtual class definitions
+
+  e.g., for probe, get_sr could be commented out and work because of how sr_probe works
 */
 
 endpackage
@@ -36,7 +43,7 @@ package alpaca_ospfb_monitor_pkg;
   import alpaca_ospfb_utils_pkg::*;
   import alpaca_ospfb_ix_pkg::*;
 
-  parameter LINE_WIDTH=8;
+  parameter LINE_WIDTH=8; // for printing to the console
 
   // TODO: the valid buffer is 1 bit wide and so a different type would be required. This adds
   // the WIDTH parameter to the DelayBufMonitor. Having this requirement is more verbose code.
@@ -151,6 +158,8 @@ package alpaca_ospfb_monitor_pkg;
     .SRLEN(SRLEN)
   ) pe_t;
 
+  typedef probe #(.WIDTH(WIDTH), .DEPTH(2*FFT_LEN)) pc_probe_t;
+
   class OspfbMonitor #(
     parameter FFT_LEN,
     parameter DEC_FAC,
@@ -159,9 +168,11 @@ package alpaca_ospfb_monitor_pkg;
   );
 
     pe_t pe_monitors[PTAPS];
+    pc_probe_t pc_monitor;
 
-    function new(pe_t pe[]);
+    function new(pe_t pe[]);//, pc_probe_t pc);
       this.pe_monitors = pe;
+      //this.pc_monitor = pc;
     endfunction
 
     function void monitor();
@@ -181,7 +192,8 @@ package alpaca_ospfb_monitor_pkg;
         else
           macstr = {macstr, " + ", pe_monitors[i].get_mac(i)};
       end
-      $display("%s\n", macstr);
+      //$display({"phase :  ", pc_monitor.peek()});
+      $display("%s\n\n", macstr);
     endfunction
 
   endclass

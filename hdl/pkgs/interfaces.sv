@@ -24,6 +24,99 @@ interface axis #(WIDTH) ();
   endfunction
 endinterface
 
+// TODO: food for thought...
+//typedef logic [WIDTH-1:0] thingy_t [SRLEN];
+//
+//interface p_if #(
+//  type T
+//) (
+//  input wire T thingy
+//);
+//
+//  class p_probe extends poker #(T);
+//
+//    function T getter();
+//      return thingy;
+//    endfunction
+//  endclass
+//
+//endinterface
+
+typedef logic [WIDTH-1:0] ram_t [2*FFT_LEN];
+
+interface ram_if #(
+  parameter WIDTH,
+  parameter DEPTH
+) (
+  input wire clk,
+  input wire ram_t ram,
+  input wire phasecomp_state_t state,
+
+  input wire logic [WIDTH-1:0] din,
+
+  input wire logic [$clog2(DEPTH)-1:0] cs_wAddr,
+  //input wire logic [$clog2(DEPTH)-1:0] ns_wAddr,
+  input wire logic [$clog2(DEPTH)-1:0] cs_rAddr,
+  //input wire logic [$clog2(DEPTH)-1:0] ns_rAddr,
+
+  //input wire logic wen,
+  //input wire logic ren,
+
+  input wire logic [$clog2(DEPTH/2)-1:0] shiftOffset,
+  input wire logic incShift
+
+);
+
+  //clocking cb @(posedge clk);
+  //  output ram;
+  //endclocking
+
+  class ram_probe #(
+    parameter WIDTH,
+    parameter DEPTH
+  ) extends probe #(
+    .WIDTH(WIDTH),
+    .DEPTH(DEPTH)
+  );
+
+    string ramfmt;
+
+    function new();
+      string bitfmt = (WIDTH==1) ? "b" : "X";
+      string bitid  = (WIDTH==1) ? "b" : "h";
+      this.ramfmt = $psprintf("0%s%%%0d%0s ", bitid, 0, bitfmt);
+    endfunction
+
+    function string peek();
+      return format_ram();
+    endfunction
+
+    function string poke();
+      return "that tickles";
+    endfunction
+
+    function string format_ram();
+
+      string info = "{State: %8s, din: 0h%04X, cs_wAddr: 0h%04X, cs_rAddr: 0h%04X, shiftOffset=0h%04X, incShift=0b%1b}\n         ";
+      string mem = $psprintf(info, state.name, din, cs_wAddr, cs_rAddr, shiftOffset, incShift);
+      mem = {mem, MGT};
+      for (int i=0; i < DEPTH; i++) begin
+        mem = {mem, " ", $psprintf(ramfmt, ram[i])};
+        if ((i+1)%4==0)
+          mem = {mem, "\n         "};
+      end
+      mem = {mem, RST};
+      return mem;
+    endfunction
+  endclass
+
+  ram_probe #(.WIDTH(WIDTH), .DEPTH(DEPTH)) monitor = new;
+
+  //always @cb
+  //  $display(monitor.peek());
+
+endinterface
+
 /*
   Shift register monitoring interface
 */

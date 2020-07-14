@@ -27,6 +27,10 @@ parameter string CYCFMT = $psprintf("%%%0d%0s",4, "d");
 parameter string BINFMT = $psprintf("%%%0d%0s",1, "b");
 parameter string DATFMT = $psprintf("%%%0d%0s",0, "d");
 
+// module typedefs
+// TODO: do we want an idle state?
+typedef enum logic {FILLA, FILLB, ERR='X} phasecomp_state_t;
+
 //typedef struct {
 //  /* is it possible to parameterize a struct or just a class?
 //  /* looks like the answer is yes... example in rfdc demo_tb_fft_checker.sv from xilinx rfdc

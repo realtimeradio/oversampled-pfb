@@ -21,6 +21,20 @@ module BindFiles;
             .a(a)
           );
 
+ // bind PhaseComp ram_if #(
+ //                  .WIDTH(WIDTH),
+ //                  .DEPTH(DEPTH)
+ //                ) probe (
+ //                  .clk(clk),
+ //                  .ram(ram),
+ //                  .state(cs),
+ //                  .din(din),
+ //                  .cs_wAddr(cs_wAddr),
+ //                  .cs_rAddr(cs_rAddr),
+ //                  .shiftOffset(shiftOffset),
+ //                  .incShift(incShift)
+ //                );
+
 /*
   bind src_ctr src_if #(
                  .MAX_CNT(MAX_CNT)
