@@ -1,15 +1,23 @@
 from plt_adc_sim import read_cx_bin
 
 if __name__=="__main__":
-  import sys
+  import sys, argparse
   import matplotlib.pyplot as plt
   import numpy as np
   from numpy.fft import (fft, fftshift)
   from numpy import (abs, log10)
 
-  fname = "dat/fft_data.bin"
-  NFFT = 8
-  FRAMES = 4
+  parser = argparse.ArgumentParser()
+
+  parser.add_argument('file', type=str, help="file containing binary fft data")
+  parser.add_argument('nfft', type=int, help='Size of FFT transform')
+  parser.add_argument('nframes', type=int, help='Number of FFT frames of length nfft')
+
+  args = parser.parse_args()
+
+  fname = args.file
+  NFFT = args.nfft
+  FRAMES = args.nframes
 
   SAMPS = NFFT*FRAMES
 
