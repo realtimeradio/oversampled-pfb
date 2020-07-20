@@ -1,6 +1,12 @@
-
 `timescale 1ns/1ps
 `default_nettype none
+
+import alpaca_ospfb_utils_pkg::WIDTH;
+import alpaca_ospfb_utils_pkg::COEFF_WID;
+import alpaca_ospfb_utils_pkg::FFT_LEN;
+import alpaca_ospfb_utils_pkg::DEC_FAC;
+import alpaca_ospfb_utils_pkg::PTAPS;
+import alpaca_ospfb_utils_pkg::SRLEN;
 
 module top #(parameter WIDTH=16) (
   input wire logic clk,
@@ -28,14 +34,23 @@ assign m_axis.tready = m_tready;
 // START HERE:
 // 1) Note - Need to remove maxis_tready in pe fsm to get vivado to not warn
 // 2) Why no DSP? Had one until starting to get ports connected correctly then it disapperared
+//
+//OSPFB #(
+//  .WIDTH(16),
+//  .COEFF_WID(16),
+//  .FFT_LEN(512),
+//  .DEC_FAC(384),
+//  .PTAPS(8),
+//  .SRLEN(64)
+//) DUT (.*);
 
 OSPFB #(
-  .WIDTH(16),
-  .COEFF_WID(16),
-  .FFT_LEN(512),
-  .DEC_FAC(384),
-  .PTAPS(8),
-  .SRLEN(64)
+  .WIDTH(WIDTH),
+  .COEFF_WID(COEFF_WID),
+  .FFT_LEN(FFT_LEN),
+  .DEC_FAC(DEC_FAC),
+  .PTAPS(PTAPS),
+  .SRLEN(SRLEN)
 ) DUT (.*);
 
 endmodule

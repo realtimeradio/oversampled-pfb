@@ -4,10 +4,10 @@
 package alpaca_ospfb_utils_pkg;
 
 // display constants
-parameter RED = "\033\[0;31m";
-parameter GRN = "\033\[0;32m";
-parameter MGT = "\033\[0;35m";
-parameter RST = "\033\[0m";
+parameter string RED = "\033\[0;31m";
+parameter string GRN = "\033\[0;32m";
+parameter string MGT = "\033\[0;35m";
+parameter string RST = "\033\[0m";
 
 parameter PERIOD = 10;          // simulation clock period
 
