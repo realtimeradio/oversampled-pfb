@@ -16,11 +16,18 @@ parameter DATA_NUM = 2*DEPTH/SRLEN-1;
 module ospfb_tb();
 
 logic clk, rst, en;
-logic [WIDTH-1:0] din, dout;
 
-axis #(.WIDTH(WIDTH)) mst();
+logic event_frame_started;
+logic event_tlast_unexpected;
+logic event_tlast_missing;
+logic event_fft_overflow;
+logic event_data_in_channel_halt;
 
-// data source + ospfb
+logic vip_full;
+
+axis #(.WIDTH(WIDTH)) m_axis_fir();
+axis #(.WIDTH(8)) m_axis_fft_status();
+
 ospfb_ctr_top #(
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
@@ -34,7 +41,17 @@ ospfb_ctr_top #(
   .clk(clk),
   .rst(rst),
   .en(en),
-  .m_axis(mst)
+
+  .m_axis_fir(m_axis_fir),
+  .m_axis_fft_status(m_axis_fft_status),
+
+  .event_frame_started(event_frame_started),
+  .event_tlast_unexpected(event_tlast_unexpected),
+  .event_tlast_missing(event_tlast_missing),
+  .event_fft_overflow(event_fft_overflow),
+  .event_data_in_channel_halt(event_data_in_channel_halt),
+
+  .vip_full(vip_full)
 );
 
 BindFiles bf();
@@ -52,7 +69,6 @@ initial begin
     simcycles += (1 & clk) & ~rst;
   end
 end
-
 
 pe_t pe_h[PTAPS];
 /*
@@ -77,43 +93,43 @@ generate
   for (pp=0; pp < PTAPS; pp++) begin
     for (mm=0; mm < NUM; mm++) begin
       initial begin
-        sr_sumbuf_h[pp][mm] = DUT.ospfb_inst.fir.pe[pp].sumbuf.gen_delay.sr[mm].probe.monitor;
-        sr_vldbuf_h[pp][mm] = DUT.ospfb_inst.fir.pe[pp].validbuf.gen_delay.sr[mm].probe.monitor;
+        sr_sumbuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].sumbuf.gen_delay.sr[mm].probe.monitor;
+        sr_vldbuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].validbuf.gen_delay.sr[mm].probe.monitor;
       end
     end
 
     for (mm=0; mm < DATA_NUM; mm++) begin
       initial begin
-        sr_databuf_h[pp][mm] = DUT.ospfb_inst.fir.pe[pp].databuf.gen_delay.sr[mm].probe.monitor;
+        sr_databuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].databuf.gen_delay.sr[mm].probe.monitor;
       end
     end
 
     for (mm=0; mm < LOOP_NUM; mm++) begin
       initial begin
-        sr_loopbuf_h[pp][mm] = DUT.ospfb_inst.fir.pe[pp].loopbuf.gen_delay.sr[mm].probe.monitor;
+        sr_loopbuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].loopbuf.gen_delay.sr[mm].probe.monitor;
 
       end
     end
 
     initial begin
       pe_h[pp] = new;
-      pe_h[pp].sumbuf = new(DUT.ospfb_inst.fir.pe[pp].sumbuf.probe.monitor,
-                            DUT.ospfb_inst.fir.pe[pp].sumbuf.headSR.probe.monitor,
+      pe_h[pp].sumbuf = new(DUT.ospfb_inst.fir_re.pe[pp].sumbuf.probe.monitor,
+                            DUT.ospfb_inst.fir_re.pe[pp].sumbuf.headSR.probe.monitor,
                             sr_sumbuf_h[pp]);
 
-      pe_h[pp].vldbuf = new(DUT.ospfb_inst.fir.pe[pp].validbuf.probe.monitor,
-                            DUT.ospfb_inst.fir.pe[pp].validbuf.headSR.probe.monitor,
+      pe_h[pp].vldbuf = new(DUT.ospfb_inst.fir_re.pe[pp].validbuf.probe.monitor,
+                            DUT.ospfb_inst.fir_re.pe[pp].validbuf.headSR.probe.monitor,
                             sr_vldbuf_h[pp]);
 
-      pe_h[pp].databuf = new(DUT.ospfb_inst.fir.pe[pp].databuf.probe.monitor,
-                             DUT.ospfb_inst.fir.pe[pp].databuf.headSR.probe.monitor,
+      pe_h[pp].databuf = new(DUT.ospfb_inst.fir_re.pe[pp].databuf.probe.monitor,
+                             DUT.ospfb_inst.fir_re.pe[pp].databuf.headSR.probe.monitor,
                              sr_databuf_h[pp]);
 
-      pe_h[pp].loopbuf = new(DUT.ospfb_inst.fir.pe[pp].loopbuf.probe.monitor,
-                             DUT.ospfb_inst.fir.pe[pp].loopbuf.headSR.probe.monitor,
+      pe_h[pp].loopbuf = new(DUT.ospfb_inst.fir_re.pe[pp].loopbuf.probe.monitor,
+                             DUT.ospfb_inst.fir_re.pe[pp].loopbuf.headSR.probe.monitor,
                              sr_loopbuf_h[pp]);
 
-      pe_h[pp].mac = DUT.ospfb_inst.fir.pe[pp].probe.monitor;
+      pe_h[pp].mac = DUT.ospfb_inst.fir_re.pe[pp].probe.monitor;
 
     end
   end
@@ -175,18 +191,21 @@ initial begin
   @(posedge clk);
   @(negedge clk) rst = 0; en = 1;
 
+  // wait until we get out of reset from the ospfb (INIT and WAITFFT states)
+  @(posedge slv.tready);
+
   $display("Cycle=%4d: Finished init...", simcycles);
   for (int i=0; i < nread; i++) begin // 10*FFT_LEN+1; i++) begin
     wait_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
-    $display(logfmt, GRN, simcycles, slv.print(), mst.print(), RST);
+    $display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
     ospfb.monitor();
     gval = out_golden[gidx++];
-    if (mst.tdata != gval) begin
+    if (m_axis_fir.tdata[WIDTH-1:0] != gval && m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
       errors++;
-      $display("%s{expected: 0x%0x, observed: 0x%0x}%s", RED, gval, mst.tdata, RST);
+      $display("%s{expected: 0x%0x, observed: 0x%0x}%s",RED,gval,m_axis_fir.tdata[WIDTH-1:0], RST);
     end else begin
-      $display("%s{expected: 0x%0x, observed: 0x%0x}%s", GRN, gval, mst.tdata, RST);
+      $display("%s{expected: 0x%0x, observed: 0x%0x}%s",GRN,gval,m_axis_fir.tdata[WIDTH-1:0], RST);
     end
   end
 

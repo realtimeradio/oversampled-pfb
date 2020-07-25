@@ -6,34 +6,92 @@ module OSPFB #(
   parameter COEFF_WID=16,
   parameter FFT_LEN=32,
   parameter DEC_FAC=24,
-  parameter SRT_PHA=23,  // modtimer decimation phase start (which port delivered first)
+  parameter SRT_PHA=23,  // (DEC_FAC-1) modtimer decimation phase start (which port delivered first)
   parameter PTAPS=8,
-  parameter SRLEN=8
+  parameter SRLEN=8,
+  parameter CONF_WID=8
 ) (
   input wire logic clk,
   input wire logic rst,
   input wire logic en,  // TODO: evaluate the need and use of this signal the signal
-  // TODO: wanting to implement tready as a debug to make sure we are always accepting a sample
-  // each cycle as noted in the AMBA AXIS recommendation for tready implementation
-  axis.MST m_axis,
-  axis.SLV s_axis
+
+  // TODO: wanting to implement m_axis tready as a debug to make sure we are always accepting a
+  // sample each cycle as noted in the AMBA AXIS recommendation for tready implementation
+  axis.SLV s_axis,                      // upstream input data
+
+  axis.MST m_axis_fir,                  // TODO: temporary m_axis for fir data to test adding fft.
+  axis.MST m_axis_fft_status,           // FFT status for overflow
+  axis.MST m_axis_data,                 // OSPFB result data
+  output logic m_axis_data_tlast,
+  output logic [7:0] m_axis_data_tuser,
+
+  output logic event_frame_started,
+  output logic event_tlast_unexpected,
+  output logic event_tlast_missing,
+  output logic event_fft_overflow,
+  output logic event_data_in_channel_halt
 );
+
+// fft is reset low
+logic aresetn;
+assign aresetn = ~rst;
 
 // for controlling samples
 logic [$clog2(FFT_LEN)-1:0] modtimer;           // decimator phase
 logic [$clog2(FFT_LEN)-1:0] rst_val = SRT_PHA;  // starting decimator phase (which port gets first sample)
 
 logic vin;
-logic signed [WIDTH-1:0] din;
+logic signed [WIDTH-1:0] din_re;
+logic signed [WIDTH-1:0] din_im;
 
-logic signed [WIDTH-1:0] pc_in;
+logic signed [WIDTH-1:0] pc_in_re;
+logic signed [WIDTH-1:0] pc_in_im;
 
-logic vout;
-logic signed [WIDTH-1:0] dout;
-logic signed [WIDTH-1:0] sout;
+logic vout_re;
+logic vout_im;
+logic signed [WIDTH-1:0] dout_re;
+logic signed [WIDTH-1:0] dout_im;
+logic signed [WIDTH-1:0] sout_re;
+logic signed [WIDTH-1:0] sout_im;
+
+/*
+s_axis_fft_data todo's
+  TODO (tready): In the xfft playground I ignored the s_axis_fft_data.tready siganl at the adc
+  model.  The reason being that since the FFT starts its first frame on the single buffered sample
+  after tready comes back those dropped samples are just dropped samples. And since the ADC cannot
+  accept back pressure and we are indifferent to the exact starting antenna voltage it would have
+  been safe to ignore tready.
+
+  However, the ospfb as a whole is not indifferent. The FFT needs to remain in lock step with
+  the phase compensation buffer (oversampled case) and the polyphase branch outputs (critically
+  sampled case).
+
+  My current approach to over come this will be to reset the circuit as planned to propagate
+  zeros through the polyphase FIR, then release the reset but hold the other
+
+  TODO (tlast): with this hardwired to 0 there will `even_tlast_unexpected` triggered. However,
+  since we need everything to be in lockstep the tlast should be easily computed then we can
+  continue to have good ways to know if we get out of sync somehow
+*/
+
+axis #(.WIDTH(2*WIDTH)) s_axis_fft_data();
+logic s_axis_fft_data_tlast;
+
+assign s_axis_fft_data.tdata = {sout_im, sout_re};
+assign s_axis_fft_data_tlast = 1'b0;
+
+// hold reset to fir components until fft is ready so we remain in step with the correct phase
+logic hold_rst;
+//assign hold_rst = rst | ~s_axis_fft_data.tready;
+
+// TODO: can leaving unconnected remove the ports in synthesis because I don't think we will
+// every use any of the configuration options
+axis #(.WIDTH(CONF_WID)) s_axis_config();
+assign s_axis_config.tdata = 1'b0;
+assign s_axis_config.tvalid = 1'b0;
 
 always_ff @(posedge clk)
-  if (rst)
+  if (hold_rst)
     modtimer <= rst_val;
   else if (en)
     modtimer <= modtimer + 1;
@@ -56,29 +114,86 @@ datapath #(
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN)
-) fir (
+) fir_re (
   .clk(clk),
-  .rst(rst),
+  .rst(hold_rst),
   .en(en), //TODO: how much longer do I carry this around...
   .vin(vin),
-  .din(din),
-  .vout(vout),
-  .dout(dout),
-  .sout(pc_in)
+  .din(din_re),
+  .vout(vout_re),
+  .dout(dout_re),
+  .sout(pc_in_re)
 );
 
 PhaseComp #(
   .WIDTH(WIDTH),
   .DEPTH(2*FFT_LEN),
   .DEC_FAC(DEC_FAC)
-) phasecomp_inst (
+) phasecomp_re_inst (
   .clk(clk),
-  .rst(rst),
-  .din(pc_in),
-  .dout(sout)
+  .rst(hold_rst),
+  .din(pc_in_re),
+  .dout(sout_re)
 );
 
-typedef enum logic {FORWARD, FEEDBACK, ERR='X} stateType;
+datapath #(
+  .WIDTH(WIDTH),
+  .COEFF_WID(COEFF_WID),
+  .FFT_LEN(FFT_LEN),
+  .DEC_FAC(DEC_FAC),
+  .PTAPS(PTAPS),
+  .SRLEN(SRLEN)
+) fir_im (
+  .clk(clk),
+  .rst(hold_rst),
+  .en(en), //TODO: how much longer do I carry this around...
+  .vin(vin),
+  .din(din_im),
+  .vout(vout_im),
+  .dout(dout_im),
+  .sout(pc_in_im)
+);
+
+PhaseComp #(
+  .WIDTH(WIDTH),
+  .DEPTH(2*FFT_LEN),
+  .DEC_FAC(DEC_FAC)
+) phasecomp_im_inst (
+  .clk(clk),
+  .rst(hold_rst),
+  .din(pc_in_im),
+  .dout(sout_im)
+);
+
+xfft_0 fft_inst (
+  .aclk(clk),                                             // input wire aclk
+  .aresetn(aresetn),                                      // input wire aresetn
+
+  .s_axis_config_tdata(s_axis_config.tdata),              // input wire [15 : 0] s_axis_config_tdata
+  .s_axis_config_tvalid(s_axis_config.tvalid),            // input wire s_axis_config_tvalid
+  .s_axis_config_tready(s_axis_config.tready),            // output wire s_axis_config_tready
+
+  .s_axis_data_tdata(s_axis_fft_data.tdata),              // input wire [31 : 0] s_axis_data_tdata
+  .s_axis_data_tvalid(s_axis_fft_data.tvalid),            // input wire s_axis_data_tvalid
+  .s_axis_data_tready(s_axis_fft_data.tready),            // output wire s_axis_data_tready
+  .s_axis_data_tlast(s_axis_fft_data_tlast),              // input wire s_axis_data_tlast
+
+  .m_axis_data_tdata(m_axis_data.tdata),                  // output wire [31 : 0] m_axis_data_tdata
+  .m_axis_data_tvalid(m_axis_data.tvalid),                // output wire m_axis_data_tvalid
+  .m_axis_data_tlast(m_axis_data_tlast),                  // output wire m_axis_data_tlast
+  .m_axis_data_tuser(m_axis_data_tuser),                  // output wire [7 : 0] m_axis_data_tuser
+
+  .m_axis_status_tdata(m_axis_fft_status.tdata),          // output wire [7 : 0] m_axis_status_tdata
+  .m_axis_status_tvalid(m_axis_fft_status.tvalid),        // output wire m_axis_status_tvalid
+
+  .event_frame_started(event_frame_started),              // output wire event_frame_started
+  .event_tlast_unexpected(event_tlast_unexpected),        // output wire event_tlast_unexpected
+  .event_tlast_missing(event_tlast_missing),              // output wire event_tlast_missing
+  .event_fft_overflow(event_fft_overflow),                // output wire event_fft_overflow
+  .event_data_in_channel_halt(event_data_in_channel_halt) // output wire event_data_in_channel_halt
+);
+
+typedef enum logic [1:0] {INIT, WAITFFT, FORWARD, FEEDBACK, ERR='X} stateType;
 stateType cs, ns;
 
 // FSM state register
@@ -88,29 +203,63 @@ always_ff @(posedge clk)
 always_comb begin
   // default values to prevent latch inferences
   ns = ERR;
-  din = 32'haabbccdd; //should never see this value, if so it is an error
+  din_re = 32'haabbccdd; //should never see this value, if so it is an error
+  din_im = 32'hddccaabb; //should never see this value, if so it is an error
+  hold_rst = 1'b1;
 
   // ospfb.py top-level equivalent producing the vin to start the process
   // why modtimer < dec_fac and not dec_fac-1 like in src counter pass through?
-  s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
+  s_axis.tready = 1'b0;
 
-  // TODO: what is the right thing to do here... for the output
-  m_axis.tvalid = vout;
-  m_axis.tdata  = sout;
+  m_axis_fir.tvalid = (vout_re & vout_im);
+  m_axis_fir.tdata  = {sout_im, sout_re};
 
+  s_axis_fft_data.tvalid = 1'b0;
   /*
-     TODO: where to use m_axis.tready for debug monitoring of slave. If m_axis.tready isn't used
-     for anything meaningful vivado synthesis throws a warning but may not be an issue. Will get
-     unexpected synthesis behavior if I don't remove this when testing it
+  TODO: where to use m_axis_data.tready for debug monitoring of slave. If m_axis_data.tready
+    isn't used for anything meaningful vivado synthesis throws a warning but may not be an issue.
+    Will get unexpected synthesis behavior if I don't remove this when testing it
   */
   vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
 
-  if (rst)
-    ns = FORWARD; // always start by processing
-  else
+  /*
+  TODO: supporting arbitrary dec fac
+    This is a simple fsm made for the early development but now that I have start thinking about
+    processing parallel samples this fsm would be the perfect (and really only place) where such a
+    complicated operation would take place to handle general arbitrary os ratios
+  */
+  if (rst) begin
+    ns = INIT;
+  end else begin
     case (cs)
+      INIT: begin
+        ns = WAITFFT;
+        s_axis_fft_data.tvalid = 1'b1; // indicate to the FFT we'd like to start
+        hold_rst = 1'b1;
+      end
+
+      WAITFFT: begin
+        if (s_axis_fft_data.tready) begin
+          hold_rst = 1'b0;
+          s_axis_fft_data.tvalid = 1'b1;
+          s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
+          ns = FORWARD;
+        end else begin
+          // I think I want to add a hold_rst=1'b1; here to be explicit for now until I am happy
+          // with the state machines
+          s_axis.tready = 1'b0;
+          s_axis_fft_data.tvalid = 1'b0;
+          ns = WAITFFT;
+        end
+      end
+
       FORWARD: begin
-        din = s_axis.tdata;
+        hold_rst = 1'b0;
+        s_axis_fft_data.tvalid = 1'b1;
+        s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
+        vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
+        din_re = s_axis.tdata[WIDTH-1:0];
+        din_im = s_axis.tdata[2*WIDTH-1:WIDTH];
         if (modtimer == DEC_FAC-1)
           ns = FEEDBACK;
         else
@@ -118,13 +267,19 @@ always_comb begin
       end
 
       FEEDBACK: begin
-        din = 32'hdeadbeef; // bogus data for testing
+        hold_rst = 1'b0;
+        s_axis_fft_data.tvalid = 1'b1;
+        s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
+        vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
+        din_re = 32'hdeadbeef; // bogus data for testing
+        din_im = 32'hbeefdead;
         if (modtimer == FFT_LEN-1)
           ns = FORWARD;
         else
           ns = FEEDBACK;
       end
     endcase // case
+  end
 end
 
 endmodule
@@ -209,6 +364,7 @@ logic signed [(COEFF_WID-1):0] coeff_ram[FFT_LEN];
 logic [$clog2(FFT_LEN)-1:0] coeff_ctr;
 logic [$clog2(FFT_LEN)-1:0] coeff_rst = COF_SRT;
 
+// TODO: for simple simulations, need to initialize with the actual coeff
 initial begin
   for (int i=0; i<FFT_LEN; i++) begin
     coeff_ram[i] = i; //{{COEFF_WID-1{1'b0}}, {1'b1}};
