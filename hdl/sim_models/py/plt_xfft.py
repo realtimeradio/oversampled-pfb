@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from plt_adc_sim import read_cx_bin
 
 if __name__=="__main__":
@@ -12,13 +13,13 @@ if __name__=="__main__":
   parser.add_argument('file', type=str, help="file containing binary fft data")
   parser.add_argument('nfft', type=int, help='Size of FFT transform')
   parser.add_argument('nframes', type=int, help='Number of FFT frames of length nfft')
-
+  parser.add_argument('-X', '--transform', action='store_true', help="perform FFT on input file")
+  parser.add_argument('-p', '--plot', action='store_true', help="plot the data")
   args = parser.parse_args()
 
   fname = args.file
   NFFT = args.nfft
   FRAMES = args.nframes
-
   SAMPS = NFFT*FRAMES
 
   # read in fft output sample
@@ -28,13 +29,20 @@ if __name__=="__main__":
   xi = xi.reshape(FRAMES, NFFT)
   xq = xq.reshape(FRAMES, NFFT)
 
-  X = xi + 1j*xq
-  magX = 20*log10(abs(X))
+  
 
-  fbins = np.arange(0, NFFT)
-  plt.plot(fbins, magX[0,:])
-  plt.plot(fbins, magX[1,:])
-  plt.plot(fbins, magX[2,:])
-  plt.plot(fbins, magX[3,:])
-  plt.show() 
+  X = xi + 1j*xq
+
+  if (args.transform):
+    X = fft(X, NFFT)
+
+  magX = 20*log10(abs(X+.0001))
+
+  if (args.plot):
+    fbins = np.arange(0, NFFT)
+    plt.plot(fbins, magX[0,:])
+    plt.plot(fbins, magX[1,:])
+    plt.plot(fbins, magX[2,:])
+    plt.plot(fbins, magX[3,:])
+    plt.show() 
 

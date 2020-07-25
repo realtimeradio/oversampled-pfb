@@ -102,25 +102,6 @@ always_comb begin
 end
 endmodule
 
-module axis_vip #(
-  parameter WIDTH=16
-) (
-  input wire logic clk,
-  input wire logic rst,
-  axis.SLV s_axis
-);
-
-logic signed [WIDTH-1:0] q;
-
-always_ff @(posedge clk)
-  if (rst)
-    q <= '0;
-  else if (s_axis.tvalid)
-
-assign s_axis.tready = 1'b1;
-
-
-endmodule
 
 // TOP combining source counter and pass through for example checking
 module top #(
