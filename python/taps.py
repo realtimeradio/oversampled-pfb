@@ -32,9 +32,19 @@ class RampTaps(Taps):
     across PEs by steps of M
   """
   @staticmethod
-  def __createTaps(M, P, D):
+  def __createTaps__(M, P, D):
     L = M*P
     h = np.arange(0, L, dtype=np.int16)
+    return h
+
+class Ones(Taps):
+  """
+    Generate a rectangular window of taps where the sum of all the taps equal one
+  """
+  @staticmethod
+  def __createTaps__(M, P, D):
+    L = M*P
+    h = 1/L*np.ones(L)
     return h
 
 class SymTaps(Taps):

@@ -15,13 +15,15 @@ parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
 
 parameter int CONF_WID = 8;
 
-parameter int SAMP = 64;
+// TODO: need to figure out how to indicate to axis vip it should start capturing
+parameter int FRAMES = 20;
+parameter int SAMP = FRAMES*FFT_LEN;
 
 parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
 
-module ospfb_tb();
+module adc_ospfb_tb();
 
 logic adc_clk, dsp_clk, rst, en;
 
@@ -39,11 +41,12 @@ logic vip_full;
 axis #(.WIDTH(2*WIDTH)) m_axis_fir();
 axis #(.WIDTH(8)) m_axis_fft_status();
 
-// ctr data source --> dual clock fifo --> ospfb --> axis vip
-ospfb_ctr_top #(
+// adc model data source --> dual clock fifo --> ospfb --> axis vip
+ospfb_adc_top #(
+  .SRC_PERIOD(ADC_PERIOD),
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
-  .ORDER("natural"),
+  .SAMP(SAMP),
   .COEFF_WID(COEFF_WID),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
@@ -92,6 +95,7 @@ task wait_dsp_cycles(int cycles=1);
     @(posedge dsp_clk);
 endtask
 
+
 // DSP clock generator
 int simcycles;
 initial begin
@@ -111,6 +115,7 @@ initial begin
     adc_cycles += (1 & adc_clk) & ~rst;
   end
 end
+
 
 pe_t pe_h[PTAPS];
 /*
@@ -174,8 +179,17 @@ generate
       pe_h[pp].mac = DUT.ospfb_inst.fir_re.pe[pp].probe.monitor;
 
     end
+
+    // initialize filter coeff
+    initial begin
+      automatic string coeffFile = $psprintf("coeff/h%0d_ones_12.coeff", pp);
+      $display("opening %s", coeffFile);
+      $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
+      $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
+    end
   end
 endgenerate
+
 
 parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
 string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
@@ -219,7 +233,7 @@ initial begin
   end
   --nread; // subtract off the last increment
   $fclose(fp);
-    
+
   ospfb = new(pe_h); //, DUT.phasecomp_inst.probe.monitor);
   //ospfb.pc_monitor = DUT.phasecomp_inst.probe.monitor;
   slv = DUT.s_axis_ospfb;
@@ -242,25 +256,27 @@ initial begin
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
     ospfb.monitor();
-    gval = out_golden[gidx++];
-    if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
-      errors++;
-      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
-                gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
-    end else begin
-      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN,
-                gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
-    end
+    //gval = out_golden[gidx++];
+    //if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
+    //  errors++;
+    //  $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
+    //            gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
+    //end else begin
+    //  $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN,
+    //            gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
+    //end
   end
 
   // wait until we have captured the required number of frames
   // note: not using axis tlast, could possibly use that instead of a full signal
-  $display("WAITING FOR FFT OUTPUTS");
+  // TODO: right now the number of frames needs to be large to capture valid output frames
+  // because as soon as the fft is valid this becomes ready and so it takes in a zeros for a
+  // while and is outputing zero frames for a while
   while (~vip_full) begin
      wait_dsp_cycles(1);
   end
 
-  fp = $fopen("ctr_ospfb_capture.bin", "wb");
+  fp = $fopen("adc_ospfb_capture.bin", "wb");
   if (!fp) begin
     $display("could not create file...");
     $finish;

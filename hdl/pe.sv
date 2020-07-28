@@ -82,7 +82,6 @@ assign s_axis_fft_data_tlast = 1'b0;
 
 // hold reset to fir components until fft is ready so we remain in step with the correct phase
 logic hold_rst;
-//assign hold_rst = rst | ~s_axis_fft_data.tready;
 
 // TODO: can leaving unconnected remove the ports in synthesis because I don't think we will
 // every use any of the configuration options
@@ -193,7 +192,7 @@ xfft_0 fft_inst (
   .event_data_in_channel_halt(event_data_in_channel_halt) // output wire event_data_in_channel_halt
 );
 
-typedef enum logic [1:0] {INIT, WAITFFT, FORWARD, FEEDBACK, ERR='X} stateType;
+typedef enum logic [1:0] {WAIT_FIFO, WAIT_FFT, FORWARD, FEEDBACK, ERR='X} stateType;
 stateType cs, ns;
 
 // FSM state register
@@ -229,27 +228,33 @@ always_comb begin
     complicated operation would take place to handle general arbitrary os ratios
   */
   if (rst) begin
-    ns = INIT;
+    ns = WAIT_FIFO;
   end else begin
     case (cs)
-      INIT: begin
-        ns = WAITFFT;
-        s_axis_fft_data.tvalid = 1'b1; // indicate to the FFT we'd like to start
-        hold_rst = 1'b1;
+      WAIT_FIFO: begin
+        if (s_axis.tvalid) begin
+          ns = WAIT_FFT;
+          hold_rst = 1'b1;
+          s_axis_fft_data.tvalid = 1'b1; // indicate to the FFT we'd like to start
+        end else begin
+          ns = WAIT_FIFO;
+          hold_rst = 1'b1;
+        end
       end
 
-      WAITFFT: begin
+      WAIT_FFT: begin
         if (s_axis_fft_data.tready) begin
           hold_rst = 1'b0;
           s_axis_fft_data.tvalid = 1'b1;
           s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
-          ns = FORWARD;
+          din_re = s_axis.tdata[WIDTH-1:0];
+          din_im = s_axis.tdata[2*WIDTH-1:WIDTH];
+          ns = FEEDBACK;
         end else begin
-          // I think I want to add a hold_rst=1'b1; here to be explicit for now until I am happy
-          // with the state machines
+          hold_rst=1'b1; // TODO: if it makes more sense, should go back and simplfy based on default assignments
           s_axis.tready = 1'b0;
           s_axis_fft_data.tvalid = 1'b0;
-          ns = WAITFFT;
+          ns = WAIT_FFT;
         end
       end
 
@@ -362,14 +367,8 @@ localparam M_D = FFT_LEN-DEC_FAC;
 
 logic signed [(COEFF_WID-1):0] coeff_ram[FFT_LEN];
 logic [$clog2(FFT_LEN)-1:0] coeff_ctr;
+// TODO: make note how starting phase also would be important to get right here
 logic [$clog2(FFT_LEN)-1:0] coeff_rst = COF_SRT;
-
-// TODO: for simple simulations, need to initialize with the actual coeff
-initial begin
-  for (int i=0; i<FFT_LEN; i++) begin
-    coeff_ram[i] = i; //{{COEFF_WID-1{1'b0}}, {1'b1}};
-  end
-end
 
 // MAC operation signals
 logic signed [WIDTH-1:0] a;       // sin + din*h TODO: verilog gotchas to extend and determine

@@ -40,7 +40,7 @@ module adc_model #(
 
   always_comb begin
     //tmp = $realtobits(v-bit_width)*(in_scale_lsb);
-    tmpscale = vi/adc_scale;
+    tmpscale = 0.1*vi/adc_scale;
     tmp = $rtoi(vi/adc_scale);
     dout = tmp;//{{(TWID-BITS){1'b0}}, tmp[63:(63-BITS+1)]};
     // TODO: need to round...
@@ -63,7 +63,7 @@ generate
 
     always_comb begin
       //tmp = $realtobits(vq-bit_width)*(in_scale_lsb);
-      tmpscale_q = vq/adc_scale;
+      tmpscale_q = 0.1*vq/adc_scale;
       tmp_q = $rtoi(vq/adc_scale);
       dout_q = tmp_q;//{{(TWID-BITS){1'b0}}, tmp[63:(63-BITS+1)]};
       // TODO: need to round...

@@ -126,7 +126,7 @@ endtask
 
 task wait_dsp_cycles(int cycles=1);
   repeat(cycles)
-    @(posedge adc_clk);
+    @(posedge dsp_clk);
 endtask
 
 // main block
@@ -158,6 +158,7 @@ initial begin
     for (int i=0; i < SAMP; i++) begin
       $fwrite(fp, "%u", DUT.vip_inst.ram[i]); // writes 4 bytes in native endian format
     end
+    $fclose(fp);
 
 
     $finish;

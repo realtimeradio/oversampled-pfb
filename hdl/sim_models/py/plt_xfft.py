@@ -17,6 +17,7 @@ if __name__=="__main__":
   parser.add_argument('-p', '--plot', action='store_true', help="plot the data")
   args = parser.parse_args()
 
+  # parase arguments
   fname = args.file
   NFFT = args.nfft
   FRAMES = args.nframes
@@ -25,11 +26,9 @@ if __name__=="__main__":
   # read in fft output sample
   (xi, xq) = read_cx_bin(fname, SAMPS)
 
-  # right now fft_data contains 4 frames of NFFT=8 samples
+  # form complex basebanded and reshape
   xi = xi.reshape(FRAMES, NFFT)
   xq = xq.reshape(FRAMES, NFFT)
-
-  
 
   X = xi + 1j*xq
 
@@ -39,10 +38,21 @@ if __name__=="__main__":
   magX = 20*log10(abs(X+.0001))
 
   if (args.plot):
+    PLT_WIDTH = 4
+    PLT_DEPTH = FRAMES//PLT_WIDTH
+
     fbins = np.arange(0, NFFT)
-    plt.plot(fbins, magX[0,:])
-    plt.plot(fbins, magX[1,:])
-    plt.plot(fbins, magX[2,:])
-    plt.plot(fbins, magX[3,:])
+    fig, ax = plt.subplots(PLT_DEPTH, PLT_WIDTH, sharey='row')
+    for i in range(0, PLT_DEPTH):
+      for j in range(0, PLT_WIDTH):
+        print(i, j)
+        idx = (i*PLT_WIDTH) + j
+        cur_ax = ax[i,j]
+
+        cur_ax.plot(fbins, magX[idx, :])
+        cur_ax.grid()
+
+    # alternativly could plot all of them
+    #plt.plot(fbins, magX.transpose())
     plt.show() 
 

@@ -114,7 +114,6 @@ xpm_fifo_axis #(
    .s_axis_tvalid(s_axis.tvalid)
 
 );
-
 // End of xpm_fifo_axis_inst instantiation
 
 pt_ctr #(
