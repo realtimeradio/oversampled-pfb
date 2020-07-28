@@ -45,7 +45,6 @@ if __name__=="__main__":
     fig, ax = plt.subplots(PLT_DEPTH, PLT_WIDTH, sharey='row')
     for i in range(0, PLT_DEPTH):
       for j in range(0, PLT_WIDTH):
-        print(i, j)
         idx = (i*PLT_WIDTH) + j
         cur_ax = ax[i,j]
 

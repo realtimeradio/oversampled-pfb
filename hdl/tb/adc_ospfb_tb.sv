@@ -182,8 +182,7 @@ generate
 
     // initialize filter coeff
     initial begin
-      automatic string coeffFile = $psprintf("coeff/h%0d_ones_12.coeff", pp);
-      $display("opening %s", coeffFile);
+      automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end
@@ -269,9 +268,7 @@ initial begin
 
   // wait until we have captured the required number of frames
   // note: not using axis tlast, could possibly use that instead of a full signal
-  // TODO: right now the number of frames needs to be large to capture valid output frames
-  // because as soon as the fft is valid this becomes ready and so it takes in a zeros for a
-  // while and is outputing zero frames for a while
+  $display("\nWaiting for OSPFB outputs to fill AXIS capture");
   while (~vip_full) begin
      wait_dsp_cycles(1);
   end

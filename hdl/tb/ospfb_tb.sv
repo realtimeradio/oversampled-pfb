@@ -174,6 +174,13 @@ generate
       pe_h[pp].mac = DUT.ospfb_inst.fir_re.pe[pp].probe.monitor;
 
     end
+
+    // initialize filter coeff
+    initial begin
+      automatic string coeffFile = $psprintf("coeff/cycramp/h_cycramp_%0d.coeff", pp);
+      $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
+      $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
+    end
   end
 endgenerate
 
@@ -253,9 +260,11 @@ initial begin
     end
   end
 
+  // For the counter source the output isn't really valid or used. Primarily the counter has
+  // been helpful in diagnosing and comparing polyphase fir structure with the python simulator
   // wait until we have captured the required number of frames
   // note: not using axis tlast, could possibly use that instead of a full signal
-  $display("WAITING FOR FFT OUTPUTS");
+  $display("\nWaiting for OSPFB outputs to fill AXIS capture");
   while (~vip_full) begin
      wait_dsp_cycles(1);
   end
