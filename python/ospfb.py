@@ -1,14 +1,8 @@
 import sys
 import numpy as np
 
+from phasecomp import PhaseComp
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
-from utils import pltOSPFBChannels
-from utils import pltCoarseSpectrum
-from utils import pltCompareFine
-from utils import pltCompareSxx
-from phasecomp import (PhaseComp, stack)
-from source import (ToneSource, SymSource)
-from goldenmodel import golden
 
 def minTuple(t):
   m = (0,0)
@@ -29,7 +23,7 @@ class OSPFB:
     the design methodolgy.
   """
 
-  def __init__(self, M, D, P, initval, dt='str', followHistory=False):
+  def __init__(self, M, D, P, taps, initval=None, dt='str', followHistory=False):
     """
       M - Polyphase branches (Transform size)
 
@@ -38,6 +32,10 @@ class OSPFB:
 
       D - Decimation rate
 
+      taps - a numpy array with data type matching dt. Error otherwise
+
+      TODO: initval seems to be deprecated and so the capability to replicate it
+      needs to be added elsewhere, either in the symboli sink or symbolic source...
       initval - starting symbolic sample index (e.g., -11 for 'x-11', or 0 for 'x0'
 
       When using values other than '0' three changes must be made to correctly
@@ -134,21 +132,18 @@ class OSPFB:
     self.iterval = initval
     self.followHistory = followHistory
 
+    if (dt == 'str' and taps.dtype != TYPES_MAP[dt]):
+      print("Symbolic taps are only compatible with ospfb dt='str'")
+      sys.exit()
+    elif (dt != 'str'):
+      print("WARNING: numeric types are compatible but may give inconsistent results")
+      print("if not carefully matched.")
+
+    self.taps = taps
+
     self.modtimer = D-1
     self.cycle = 0
     self.run = False
-
-    # TODO: allow for tap initialization
-    # initialize prototype LPF
-    if self.dt == "str":
-      h = ['h{}'.format(i) for i in range(0, self.L)]
-    else:
-      tmpid = np.arange(-self.P/2*self.osratio, self.osratio*self.P/2, 1/self.D)
-      tmpx = np.sinc(tmpid)
-      hann = np.hanning(self.L)
-      h = tmpx*hann
-
-    self.taps = h
 
     # initialize PEs elements
     self.PEs = [pe(idx=1, M=M, D=D,
@@ -165,10 +160,12 @@ class OSPFB:
     # initialize phase compensation block
     self.pc = PhaseComp(M=self.M, D=self.D,
                         dt=dt,
+                        initPhaseRot=True,
                         keepHistory=self.followHistory)
 
-    self.strfmt = "T={{{:s}}} in:({{{:s}}}, {{}}), out:({{{:s}}}, {{{:s}}}, {{}})"
-    self.strfmt = self.strfmt.format(":<3d", TYPES_STR_FMT[self.dt], TYPES_STR_FMT[self.dt], TYPES_STR_FMT[self.dt])
+    self.strfmt = "T={{{:s}}} in:({{{:s}}}, {{}}), firout: ({{{:s}}}), out:({{{:s}}}, {{{:s}}}, {{}})"
+    self.strfmt = self.strfmt.format(":<3d", TYPES_STR_FMT[self.dt],
+                                TYPES_STR_FMT[self.dt], TYPES_STR_FMT[self.dt], TYPES_STR_FMT[self.dt])
 
   def enable(self):
     self.run = (not self.run)
@@ -193,7 +190,7 @@ class OSPFB:
     self.modtimer = (self.modtimer+1) % self.M
     peout, firout = self.runPEs(dnext, vnext)
 
-    print(self.strfmt.format(self.cycle, dnext, vnext, peout[0], peout[1], peout[2]))
+    print(self.strfmt.format(self.cycle, dnext, vnext, firout, peout[0], peout[1], peout[2]))
 
     return (peout, firout)
 
@@ -210,12 +207,16 @@ class OSPFB:
     firout = peout[1]
     # the last output of the PE is then input to the phase compensation prior to
     # the FFT
-    # TODO: enable calculation should be replaced with a valid signal at the
-    # input. Currently the valid buffers are length 2*M but I am getting a
-    # little more convinced that it should be M. See notes.
-    en = self.M*(self.P-1)+2
+
+    en = 1
+    # symbolic simulation support TODO: can this be removed like with numeric processing? so that
+    # the phase comp is then always running?
+    if self.dt == 'str':
+     en = self.M*(self.P-1)+1
+
     if (self.cycle) >= en:
       peout = self.pc.step(peout[0], peout[1], peout[2])
+
     return (peout, firout)
 
   def valid(self):
@@ -269,7 +270,10 @@ class pe:
     self.sumbuf   = ringbuffer(length=M, dt=dt)
     self.delaybuf = ringbuffer(length=(M-D), dt=dt)
     self.databuf  = ringbuffer(length=2*M, dt=dt)
-    self.validbuf = ringbuffer(length=2*M, load=["False" for i in range(0,2*M)], dt=dt)
+    # TODO: current hardware implementation uses M, original symbolic used 2M. Tests seem to show that
+    # (M-D)(check this one), M, 2*M, and any multiple of M all work -- what is the correct value to use. Leaving at M now
+    # because we want to match the hardware implementation to compare to.
+    self.validbuf = ringbuffer(length=M, load=["False" for i in range(0,M)], dt=dt)
 
     self.cycle = 0
 
@@ -559,7 +563,7 @@ class sink:
   verification
   """
 
-  def __init__(self, M, D, P, init=None, order='reversed'):
+  def __init__(self, M, D, P, init=None, order='processing'):
     # OS PFB parameters
     self.M = M
     self.P = P
@@ -570,8 +574,19 @@ class sink:
     self.shifts = [-(s*D) % M for s in range(0, self.S)]
 
     # output processing order
-    # reversed - processing order (port M-1 down to zero, newest to oldest)
-    # natrual  - parallel or natrual order (port 0 to M, oldest to newest)
+    # processing - reversed or processing order (output port M-1 down to zero, newest to oldest) (x7, x6, .., x0, x15, x4, ..., x8)
+    # natrual    - parallel or natrual order (output port 0 to M, oldest to newest) (x0, x1, x2, ..., x8, x9, x10, ...)
+    #
+    # The distinction on ordering was primiarily created for verifying the connection between the
+    # phase compensation and FFT of the ospfb. This is because the input to most FFTs assumes natural
+    # ordered samples but the outputs from the polyphase fir are pulled off from the output port M-1 down to zero (processing order)
+    # and needs to be converted to natural for the FFT.
+    # The sink and source classess subsequently had an ordering parameter added so that the same class can be used to verify both
+    # the polyphase fir and the phase compensator independent of each other. More specifically it was found that processing order
+    # was easier to use to verify the phase compensator and natural ordering for the polyphase fir.
+    # Since the ordering also determines how samples are created this means that in terms of verifying the whole polyphase FIR and
+    # and phase compensator together only natural ordered inputs has been used. This makes the most sense since samples are delivered
+    # sequentially in natrual fashion (x0, x1, x2, ..., etc.)
     self.order = order
 
     # determine the decimated time sample (n*D) and branch index that the initial
@@ -604,7 +619,7 @@ class sink:
       self.m = self.startbranch[1]  # branch index
     else:
       self.n = 0
-      if order == "reversed":
+      if order == "processing":
         self.m = self.M-1
       else:
         self.m = 0
@@ -645,7 +660,7 @@ class sink:
 
     yex = "y{}".format(rs+self.n*self.M)
 
-    if self.order == "reversed":
+    if self.order == "processing":
       # output ordered from port M-1 down to zero
       if self.m==0:
         self.n += 1
@@ -733,20 +748,16 @@ def computeLatency(P, M, D):
 
 
 if __name__ == "__main__":
-  import matplotlib.pyplot as plt
-  from numpy.fft import (fft, ifft, fftshift)
-  from numpy import (log10, abs, min, max)
-  print("**** Software OS PFB Symbolic Hardware Calculation ****")
+  from taps import (CyclicRampTaps, SymTaps, HannWin)
+  from source import (ToneSource, SymSource)
+
+  print("**** Software OS PFB Symbolic Hardware Simulation ****")
 
   # simulation data type
   SIM_DT = 'cx'
 
   # OS PFB parameters
-  M = 32; D = 24; P = 8;
-  NFFT = M
-
-  # second stage parameters
-  NFFT_FINE = 512
+  M = 64; D = 48; P = 8;
 
   # example ring buffer initialization
   rb = ringbuffer(8)
@@ -756,27 +767,16 @@ if __name__ == "__main__":
   pe1 = pe(idx=1, M=M, D=D, taps=taps[(M-1)::-1])
   pe2 = pe(idx=2, M=M, D=D, taps=taps[(2*M-1):(M-1):-1])
 
-  # It does not make sense to talk about samples other than '0' with an FIR
+  # ospfb and source instances
+  # note: It does not make sense to talk about samples other than '0' with an FIR
   # but this is left for verification with arbitrary values.
   initval = 0
-  ospfb = OSPFB(M=M, D=D, P=P, initval=initval, dt=SIM_DT, followHistory=False)
-  ospfb.enable()
-  s = sink(M=M, D=D, P=P, init=None, order='natural')
+  if SIM_DT is not 'str':
+    taps = HannWin.genTaps(M, P, D)
+  else:
+    taps = SymTaps.genTaps(M, P, D)
+  ospfb = OSPFB(M=M, D=D, P=P, taps=taps, initval=initval, dt=SIM_DT, followHistory=False)
 
-  # output stack
-  dout = stack(length=M, dt=SIM_DT)
-  # collection of output frames
-  ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
-  fi = 0 # ospfb_data output idx counter
-
-  golden_in = []
-
-  FINE_FRAMES = 2
-  frameidx = 0
-  GfMat = np.zeros((D*NFFT_FINE, FINE_FRAMES), dtype=np.complex128)
-  fineSpectrumMat = np.zeros((D*NFFT_FINE, FINE_FRAMES), dtype=np.complex128)
-
-  # initialize data generator
   if SIM_DT is not 'str':
     fs = 10e3
     flist = [2200, 3050, 4125,5000, 6561, 8333]
@@ -786,141 +786,16 @@ if __name__ == "__main__":
   else:
     src = SymSource(M, order='natural')
 
-  Tvalid = M*P+2
-  cycleValid = computeLatency(P, M ,D)
-  Tend = 16500
+  # start running ospfb with source
+  Tend = 10           # number of simulation cycles to run
+  ospfb.enable()
 
-
-  # why the -1? I remember it has to do with Tvalid having +2 but would it make
-  # more sense to instead have Tvalid at +1?
-  # I did verify that this is the correct sequence that we want for collecting
-  # the output as it lines the frames up into the FFT buffer correctly.
-
-  # Need to advance the ospfb before stepping the sink
-  din = TYPES_INIT[SIM_DT] # init din in case ospfb.valid() not ready
-  for i in range(0, Tvalid-1):
-    # Imitate hardware-like AXIS handshake
+  din = TYPES_INIT[SIM_DT]
+  for i in range(0, Tend):
+    # simulate the hardware-like AXIS handshake
     # The OS PFB indicates a new sample will be accepted otherwise din will keep
     # the previous value generated
     if ospfb.valid():
       din = src.genSample()
-      golden_in.append(din)
 
     peout, pe_firout = ospfb.step(din)
-
-  while frameidx < FINE_FRAMES:
-    if ospfb.valid():
-      din = src.genSample()
-      golden_in.append(din)
-
-    peout, _ = ospfb.step(din)
-
-    # need to append each run but need to make sure an ifft shouldn't fire first
-    if dout.full:
-      x = dout.buf
-      if SIM_DT is not 'str':
-        ospfb_data[:, fi] = ifft(x, NFFT)*NFFT
-      else:
-        ospfb_data[:, fi] = x
-      fi += 1
-      dout.reset()
-
-    dout.write(peout[1])
-
-    # check individual output steps when processing symbolic data
-    if SIM_DT is 'str':
-      _, sink_rotout, _ = s.step()
-
-      # get just the sum from both the ospfb and sink outputs
-      rot = peout[1]
-      sink_rotout = sink_rotout.split(" = ")[2]
-
-      # In symbolic processing the filter state is not initialized. Instead, the
-      # filter continues to operate filling results with "null" values ('-')
-      # until a valid symbolic value is available.  We therefore cannot compare
-      # sink and ospfb outputs until the filter state is populated.
-      # Instead what we do is trim the filter output and compare what is ready.
-      nid = rot.find('-')
-      if (nid) >= 0:
-        nplus = rot.find('+')
-        # nothing to check if a null appears in the first tap (before the first '+')
-        if nid < nplus :
-          continue
-
-        # trim for a shortened filter output we can compare against
-        sub = rot[0:nid]
-        rot = sub.rpartition(' + ')[0]
-
-      if (sink_rotout.find(rot) != 0):
-        print("Symbolic simulation FAILED!")
-        print("expected:", sink_rotout)
-        print("computed:", rot)
-        sys.exit()
-
-    # Evaluation and second stage fft for numeric simulations
-    if SIM_DT is not 'str':
-      # if we want to check for NFFT_FINE -1 might want to move fi++ to end of
-      # loop instead of right after ifft computation
-      if (fi==NFFT_FINE): # we have enough outputs to comute a fine spectrum
-        # second fine stage PFB looking for scalloping and aliasing (simplified as
-        # just an FFT for now)
-        # Must generate enough output windows for a second stage
-        N_FINE_CHANNELS = D*NFFT_FINE
-        hsov = (M-D)*NFFT_FINE//(2*M)
-        fs_os = fs/D
-        if (ospfb_data.shape[1] < NFFT_FINE):
-          print("Not enough output windows for a second stage NFFT_FINE=", NFFT_FINE)
-          sys.exit()
-        fineoutputmat = fftshift(fft(ospfb_data, NFFT_FINE, axis=1), axes=(1,))/NFFT_FINE
-
-        fineOutputPruned = fineoutputmat[:,(hsov-1):-(hsov+1)]
-        fineSpectrum = fineOutputPruned.reshape(N_FINE_CHANNELS)
-        fineSpectrumMat[:, frameidx] = fineSpectrum
-
-        # GOLDEN MODEL CALCULATION
-        st = 0
-        ed = 0
-        GX = np.zeros((NFFT, NFFT_FINE), dtype=np.complex128)
-        mm = 0
-        decmod = 0
-        gi = np.zeros((M, M*P-1), dtype=np.complex128)
-
-        while ed < NFFT_FINE:
-          #print("mm=", mm)
-          #mm += 1
-
-          gx = np.array(golden_in[0:M])
-          del golden_in[0:M]
-          (Gdec, gi, ndec, decmod) = golden(gx, ospfb.taps, gi, M, D, decmod)
-
-          ed = st + ndec
-          GX[:, st:ed] = Gdec
-          st = ed
-
-        Gfine = fftshift(fft(GX, NFFT_FINE, axis=1), axes=(1,))/NFFT_FINE
-        Gfinepruned = Gfine[:, (hsov-1):-(hsov+1)]
-        Gf = Gfinepruned.reshape(N_FINE_CHANNELS)
-        GfMat[:, frameidx] = Gf
-        frameidx += 1
-
-        # clear ospfb_data and reset fi
-        ospfb_data = np.zeros((NFFT, NFFT_FINE), dtype=TYPES_MAP[SIM_DT])
-        fi = 0
-
-        PLT=False
-        if PLT:
-          # plot the most recent output of the OSPFB
-          pltCoarseSpectrum(ospfb_data[:,-1], fs)
-
-          # plot individual channels from ospfb simulation outputs
-          pltOSPFBChannels(M, 4, 8, fineoutputmat, hsov, fs_os, pruned=False)
-          pltOSPFBChannels(M, 4, 8, fineoutputmat, hsov, fs_os, pruned=True)
-
-          # plot full fine spectrum for ospfb simulation and model
-          pltCompareFine(fineoutputmat, Gfine, N_FINE_CHANNELS, NFFT_FINE, fs_os, hsov)
-
-
-  # plot the PSD estimates comparing the simulated model with the gold standard
-  pltCompareSxx(fineSpectrumMat, GfMat, N_FINE_CHANNELS, NFFT_FINE, fs_os, hsov)
-
-  print ("SIMULATION COMPLETED SUCCESSFULLY!")
