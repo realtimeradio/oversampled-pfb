@@ -16,7 +16,7 @@ class Taps(object):
 
 # TODO: not really liking the whole _name_Taps construct. It seems this would be better
 # if the working interface was to call Taps.CyclicRamp, Taps.SymTaps, etc.
-class CyclicRampTaps(Taps):
+class CyclicRamp(Taps):
   """
     Generate a ramp of coeff of type np.int16 from 0 to M-1 in each PE
   """
@@ -26,7 +26,7 @@ class CyclicRampTaps(Taps):
     return h
 
 
-class RampTaps(Taps):
+class Ramp(Taps):
   """
     Generate a ramp of coeff of type np.int16 from 0 to M*P-1. The taps are distributed
     across PEs by steps of M
@@ -47,7 +47,7 @@ class Ones(Taps):
     h = 1/L*np.ones(L)
     return h
 
-class SymTaps(Taps):
+class Symbolic(Taps):
   @staticmethod
   def __createTaps__(M, P, D):
     L = M*P
