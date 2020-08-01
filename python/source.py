@@ -4,6 +4,8 @@ from numpy import fft
 
 from scipy import signal
 
+from fixedpoint import s16
+
 class Source(object):
   """
   Simulation source for generating samples
@@ -45,6 +47,116 @@ class BlueNoise(Source):
     dout, self.zi = signal.lfilter(self.h, 1, [xw], zi=self.zi)
 
     return dout
+
+class RFDC():
+  def __init__(self, fs=2.048e9, bits=12, fsv=1.0, sample_mode='sim_cx', output_mode='twos'):
+    """
+      sample_mode:
+        cx - simulate digital down converter
+        sim_cx - expected to receive a complex tone on the input
+        real - sample real signal
+
+      output_mode:
+        twos - output data backed as binary data for complex sampled modes the data are {vq, vi}
+        natural - single natural number for real mode and tuble for complex sampling modes
+    """
+    self.fs = fs                                      # sample rate [hz]
+    self.dt = 1/self.fs                               # sample period [s]
+    self.bits = bits                                  # adc bit resolution [bits]
+    self.fsv = fsv                                    # full-scale voltage [volts]
+    self.vpk = self.fsv/2.0                           # peak voltage [volts]
+    self.lsb_scale = -self.vpk * -2**-(self.bits-1)   # scaling weight [volts / bit]
+    self.bit_range = (-2**(self.bits-1), 2**(self.bits-1) - 1)
+
+    self.Rtile = 100                                  # [ohm]
+    self.vrms = self.vpk/np.sqrt(2)                   # [volts]
+    self.Pmax = self.vrms**2/self.Rtile               # [watts]
+
+    self.sample_mode = sample_mode
+    self.nco = self.fs/2                              # [hz]
+    self.decimation_fac = 1
+
+  def fromNative16(v):
+    """
+      pythons built in types don't display correctly when doing bin()/hex() of a negative
+      number so we convert them to the integer version so we can have the correct number
+      that when interpreted as two's complement gives us right numbers
+    """
+    return (v & 0x8000) | (v & 0x7fff)
+
+  def quantize(self, q):
+    # quantize
+    d = np.round(q/self.lsb_scale)
+    # saturate
+    d = np.where(d < self.bit_range[0], self.bit_range[0], d)
+    d = np.where(d > self.bit_range[1], self.bit_range[1], d)
+
+    return d
+
+  def sample(self, v):
+
+    if (np.abs(v) > self.vpk):
+      print("WARNING: input voltage greater than ADC can tolerate")
+    
+    if self.sample_mode=='cx':
+      omega = 2*pi*self.nco/self.fs
+      # TODO: how to keep track of sample time for digital down converter
+      vi = v*np.cos(omega)
+
+      out = None
+
+    elif self.sample_mode=='sim_cx':
+      vi = np.real(v)
+      vq = np.imag(v)
+
+      vi = self.quantize(vi)
+      vq = self.quantize(vq)
+
+      out = (vq, vi)
+
+    elif self.sample_mode=='real':
+      vi = self.quantize(v)
+
+      out = vi
+
+    else:
+      print("sample mode configuration error")
+      sys.exit()
+
+    return out
+
+    #if output_mode=='twos':
+    #  vi = self.fromNative(vi)
+    #  vq = self.fromNative(vq)
+
+    #  # concatenate output as {vq, vi} in to be interpreted as two's complement
+    #  out = (vq << 16) | vi
+    #  """
+    #  to get the number back we would do:
+    #    vi = out & 0xffff
+    #    vq = (out & 0xffff0000) >> 16
+    #  """
+    #
+    #return out
+
+class ToneGenerator(Source):
+  def __init__(self, M=8, fs=2048, sigpow_dBm=-6, f=100, rload=100):
+    super().__init__(M)
+    self.rload = rload                               # [ohms]
+    self.fs = fs                                     # [hz]
+    self.sigpow = 10**(sigpow_dBm/10)*1e-3           # [watts]
+    self.vrms = np.sqrt(self.rload*self.sigpow)
+    self.vpk = self.vrms*np.sqrt(2)
+    self.f_soi = f
+
+  def __createSample__(self):
+    omega = 2*np.pi*self.f_soi
+    n = self.i*self.M + self.modtimer
+    argf = omega*n/self.fs
+
+    sample = self.vpk*(np.cos(argf) + 1j*np.sin(argf))
+
+    return sample
 
 class ToneSource(Source):
   def __init__(self, M=8, fs=2048, sigpowdb=10, noisepowdb=1, ntones=1, freqlist=[1000]):
