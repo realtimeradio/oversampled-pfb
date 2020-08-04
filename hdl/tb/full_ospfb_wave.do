@@ -35,11 +35,14 @@ add wave -noupdate /adc_ospfb_tb/DUT/ospfb_inst/fft_inst/s_axis_data_tvalid
 add wave -noupdate /adc_ospfb_tb/DUT/ospfb_inst/fft_inst/event_fft_overflow
 add wave -noupdate /adc_ospfb_tb/DUT/ospfb_inst/fft_inst/event_frame_started
 add wave -noupdate /adc_ospfb_tb/DUT/ospfb_inst/fft_inst/event_data_in_channel_halt
+add wave -noupdate /adc_ospfb_tb/DUT/ospfb_inst/fft_inst/s_axis_config_tdata
+add wave -noupdate /adc_ospfb_tb/DUT/ospfb_inst/fft_inst/s_axis_config_tready
+add wave -noupdate /adc_ospfb_tb/DUT/ospfb_inst/fft_inst/s_axis_config_tvalid
 add wave -noupdate /adc_ospfb_tb/DUT/vip_inst/s_axis/tdata
 add wave -noupdate /adc_ospfb_tb/DUT/vip_inst/s_axis/tready
 add wave -noupdate /adc_ospfb_tb/DUT/vip_inst/s_axis/tvalid
 TreeUpdate [SetDefaultTree]
-WaveRestoreCursors {{Cursor 1} {3039849 ps} 0}
+WaveRestoreCursors {{Cursor 1} {3026480 ps} 0}
 quietly wave cursor active 1
 configure wave -namecolwidth 299
 configure wave -valuecolwidth 100
@@ -55,4 +58,4 @@ configure wave -griddelta 40
 configure wave -timeline 0
 configure wave -timelineunits ns
 update
-WaveRestoreZoom {2959839 ps} {3347850 ps}
+WaveRestoreZoom {2513279 ps} {3151745 ps}

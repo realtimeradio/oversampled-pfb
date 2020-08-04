@@ -83,11 +83,8 @@ assign s_axis_fft_data_tlast = 1'b0;
 // hold reset to fir components until fft is ready so we remain in step with the correct phase
 logic hold_rst;
 
-// TODO: can leaving unconnected remove the ports in synthesis because I don't think we will
-// every use any of the configuration options
+// Needed to configure the core to perform the inverse transform and scaling schedule
 axis #(.WIDTH(CONF_WID)) s_axis_config();
-assign s_axis_config.tdata = 1'b0;
-assign s_axis_config.tvalid = 1'b0;
 
 always_ff @(posedge clk)
   if (hold_rst)
@@ -164,6 +161,7 @@ PhaseComp #(
   .dout(sout_im)
 );
 
+// TODO: Need to set the INV bit in the configuration channel
 xfft_0 fft_inst (
   .aclk(clk),                                             // input wire aclk
   .aresetn(aresetn),                                      // input wire aresetn
@@ -214,6 +212,10 @@ always_comb begin
   m_axis_fir.tdata  = {sout_im, sout_re};
 
   s_axis_fft_data.tvalid = 1'b0;
+
+  // default configuration values
+  s_axis_config.tdata = 1'b0;
+  s_axis_config.tvalid = 1'b0;
   /*
   TODO: where to use m_axis_data.tready for debug monitoring of slave. If m_axis_data.tready
     isn't used for anything meaningful vivado synthesis throws a warning but may not be an issue.
@@ -236,6 +238,7 @@ always_comb begin
           ns = WAIT_FFT;
           hold_rst = 1'b1;
           s_axis_fft_data.tvalid = 1'b1; // indicate to the FFT we'd like to start
+          s_axis_config.tvalid = 1'b1;   // load the inverse transform and scaling schedule
         end else begin
           ns = WAIT_FIFO;
           hold_rst = 1'b1;
