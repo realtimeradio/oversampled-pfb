@@ -2,7 +2,7 @@
 `default_nettype none
 
 // TODO: do we need a data type parameter so SRLShiftReg can be signed and unsigned?
-module datapath #( // less phasecomp...
+module datapath #( // less phasecomp... and fft...
   parameter WIDTH=16,
   parameter COEFF_WID=16,
   parameter FFT_LEN=32,
@@ -84,6 +84,7 @@ logic [$clog2(FFT_LEN)-1:0] coeff_rst = COF_SRT;
 logic signed [WIDTH-1:0] a;       // sin + din*h TODO: verilog gotchas to extend and determine
 logic signed [(COEFF_WID-1):0] h; // coeff tap value
 logic signed [(WIDTH-1):0] mac;   // TODO: need correct width and avoid verilog gotchas (sign/ext)
+logic signed [(2*WIDTH-1):0] tmp_mac;   // TODO: need correct width and avoid verilog gotchas (sign/ext)
 
 // buffer connection signals
 logic signed [WIDTH-1:0] loopbuf_out;
@@ -109,7 +110,12 @@ always_comb begin
     a = loopbuf_out;
 end
 
-assign mac = sin + a*h;
+always_comb begin
+  tmp_mac = sin + a*h;
+  mac = $signed(tmp_mac[26:11]);
+  //mac = $signed(tmp_mac[2*WIDTH-1:WIDTH]);
+end
+//assign mac = sin + a*h;
 
 DelayBuf #(
   .DEPTH(M_D),

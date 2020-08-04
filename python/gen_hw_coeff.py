@@ -4,7 +4,7 @@ import sys, argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
-from taps import (HannWin, Ones, CyclicRampTaps)
+from taps import (HannWin, Ones, CyclicRamp)
 
 if __name__=="__main__":
 
@@ -25,8 +25,6 @@ if __name__=="__main__":
   window = args.window
 
   # compute filter
-  lsb_scale = 1/(2**(BITS-1))
-
   if (window == "hann"):
     h = HannWin.genTaps(M, P, D)
   elif (window == "rect"):
@@ -34,6 +32,9 @@ if __name__=="__main__":
   else:
     print("Window not supported")
     sys.exit()
+
+  filter_pk = np.max(h)
+  lsb_scale = filter_pk/(2**(BITS-1)-1)
 
   h_scale = h/lsb_scale;
 

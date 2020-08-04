@@ -4,7 +4,7 @@
 module adc_model #(
   parameter real PERIOD = 10,
   parameter string DTYPE = "CX",             // real or complex valued
-  parameter real F_SOI_NORM = 0.73,   // normalized frequency to generate SOI, [0 <= fnorm < 1]
+  parameter real F_SOI_NORM = 0.27,   // normalized frequency to generate SOI, [0 <= fnorm < 1]
   parameter real VCM = 1.27,          // Voltage common mode [V]
   parameter real FSV = 1.00,          // Full-scale voltage  [V]
   parameter int BITS = 12,
@@ -40,7 +40,7 @@ module adc_model #(
 
   always_comb begin
     //tmp = $realtobits(v-bit_width)*(in_scale_lsb);
-    tmpscale = 0.1*vi/adc_scale;
+    tmpscale = vi/adc_scale;
     tmp = $rtoi(vi/adc_scale);
     dout = tmp;//{{(TWID-BITS){1'b0}}, tmp[63:(63-BITS+1)]};
     // TODO: need to round...
@@ -63,7 +63,7 @@ generate
 
     always_comb begin
       //tmp = $realtobits(vq-bit_width)*(in_scale_lsb);
-      tmpscale_q = 0.1*vq/adc_scale;
+      tmpscale_q = vq/adc_scale;
       tmp_q = $rtoi(vq/adc_scale);
       dout_q = tmp_q;//{{(TWID-BITS){1'b0}}, tmp[63:(63-BITS+1)]};
       // TODO: need to round...

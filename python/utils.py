@@ -9,16 +9,18 @@ TYPES_MAP = {
   'int32' : np.int32,
   'int'   : int,
   'float' : float,
+  'double': np.float64,
   'cx'    : np.complex128,
   'bool'  : bool
 }
 
 TYPES_INIT = {
   'str'   : '-',
-  'int16' : 0,
-  'int32' : 0,
-  'int'   : 0,
-  'float' : 0.0,
+  'int16' : np.int16(0),
+  'int32' : np.int16(0),
+  'int'   : int(0),
+  'float' : float(0.0),
+  'double': np.float64(0.0),
   'cx'    : 0+0*1j,
   'bool'  : False
 }
@@ -27,6 +29,8 @@ TYPES_STR_FMT = {
   'str'   : ':<4s',
   'int'   : ':<4d',
   'int16' : ':<4d',
+  'int32' : ':<4d',
+  'float' : ':<4g',
   'cx'    : ':<4g',
 }
 

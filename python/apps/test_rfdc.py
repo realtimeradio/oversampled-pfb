@@ -17,9 +17,12 @@ if __name__=="__main__":
   nsamps = 256
 
   xt = np.zeros(nsamps, dtype=np.complex64)
-  xn_re = np.zeros(nsamps)
-  xn_im = np.zeros(nsamps)
+  xn_re = np.zeros(nsamps, dtype=np.int16)
+  xn_im = np.zeros(nsamps, dtype=np.int16)
   for i in range(0, nsamps):
     s = src.genSample()
     xt[i] = s
     xn_im[i], xn_re[i] = rfdc.sample(s)
+
+  # to convert to the converted value
+  # tofracfixed(xn_re, 16, numbits)

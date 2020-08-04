@@ -4,6 +4,8 @@ from numpy import fft
 
 from scipy import signal
 
+from utils import (TYPES, TYPES_MAP)
+
 from fixedpoint import s16
 
 class Source(object):
@@ -87,11 +89,11 @@ class RFDC():
   def quantize(self, q):
     # quantize
     d = np.round(q/self.lsb_scale)
-    # saturate
-    d = np.where(d < self.bit_range[0], self.bit_range[0], d)
-    d = np.where(d > self.bit_range[1], self.bit_range[1], d)
+    # saturate - where() is over the top with it being one sample but poteitnally extend to an array in the future
+    d = bit_range[0] if d < self.bit_range[0] else d
+    d = bit_range[1] if d > self.bit_range[1] else d
 
-    return d
+    return np.int16(d)
 
   def sample(self, v):
 
@@ -185,6 +187,25 @@ class ToneSource(Source):
 
     dout = dout + noise
     return dout
+
+class Impulse(Source):
+  def __init__(self, M=8, P=4, D=6, k=0, dt='float'):
+    super().__init__(M)
+    self.P = P
+    self.D = D
+    self.L = M*P
+    self.dt = TYPES_MAP[dt]
+    if (k < 0 or k > self.M-1):
+      print("ERROR: valid impulse index are: 0 <= k < M-1")
+
+    self.k = k
+
+  def __createSample__(self):
+    if (self.modtimer==self.k):
+      # TODO: add dynamic weight, may potentially want to add to track scaling, quantization etc.
+      return self.dt(self.M)
+    else:
+      return self.dt(0)
 
 class CounterSource(Source):
   def __init__(self, M=8, order='natural'):

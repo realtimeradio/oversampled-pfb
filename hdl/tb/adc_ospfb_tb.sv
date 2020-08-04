@@ -182,7 +182,9 @@ generate
 
     // initialize filter coeff
     initial begin
-      automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
+      //automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
+      //automatic string coeffFile = $psprintf("coeff/hann/h%0d_15.coeff", pp);
+      automatic string coeffFile = $psprintf("coeff/h%0d_16.coeff", pp);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end
