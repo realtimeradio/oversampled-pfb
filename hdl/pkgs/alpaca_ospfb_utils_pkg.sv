@@ -21,7 +21,7 @@ parameter SRLEN = 4;
 parameter int  FFT_LEN = 64;               // (M)   polyphase branches
 parameter real OSRATIO = 3.0/4.0;          // (M/D) oversampling ratio
 parameter int  DEC_FAC = FFT_LEN*OSRATIO;  // (D)   decimation factor 
-parameter PTAPS = 3;
+parameter PTAPS = 4;
 
 parameter string CYCFMT = $psprintf("%%%0d%0s",4, "d");
 parameter string BINFMT = $psprintf("%%%0d%0s",1, "b");

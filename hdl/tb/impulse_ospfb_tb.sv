@@ -15,13 +15,19 @@ parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
 
 parameter int CONF_WID = 8;
 
-parameter int SAMP = 64;
+// impulse parameters
+parameter int IMPULSE_PHASE = DEC_FAC+1;
+parameter int PULSE_VAL = 1;
+
+// TODO: need to figure out how to indicate to axis vip it should start capturing
+parameter int FRAMES = 32;
+parameter int SAMP = FRAMES*FFT_LEN;
 
 parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
 
-module ospfb_tb();
+module impulse_ospfb_tb();
 
 logic adc_clk, dsp_clk, rst, en;
 
@@ -39,15 +45,17 @@ logic vip_full;
 axis #(.WIDTH(2*WIDTH)) m_axis_fir();
 axis #(.WIDTH(8)) m_axis_fft_status();
 
-// ctr data source --> dual clock fifo --> ospfb --> axis vip
-ospfb_ctr_top #(
+// impulse data source --> dual clock fifo --> ospfb --> axis vip
+ospfb_impulse_top #(
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
-  .ORDER("natural"),
+  .SAMP(SAMP),
   .COEFF_WID(COEFF_WID),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
+  .IMPULSE_PHASE(IMPULSE_PHASE),
+  .PULSE_VAL(PULSE_VAL),
   .SRLEN(SRLEN),
   .CONF_WID(CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
@@ -92,6 +100,7 @@ task wait_dsp_cycles(int cycles=1);
     @(posedge dsp_clk);
 endtask
 
+
 // DSP clock generator
 int simcycles;
 initial begin
@@ -111,6 +120,7 @@ initial begin
     adc_cycles += (1 & adc_clk) & ~rst;
   end
 end
+
 
 pe_t pe_h[PTAPS];
 /*
@@ -177,12 +187,16 @@ generate
 
     // initialize filter coeff
     initial begin
-      automatic string coeffFile = $psprintf("coeff/cycramp/h_cycramp_%0d.coeff", pp);
+      automatic string coeffFile = $psprintf("coeff/ones/h%0d_unit_16.coeff", pp);
+      //automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
+      //automatic string coeffFile = $psprintf("coeff/hann/h%0d_15.coeff", pp);
+      //automatic string coeffFile = $psprintf("coeff/h%0d_16.coeff", pp);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end
   end
 endgenerate
+
 
 parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
 string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
@@ -226,7 +240,7 @@ initial begin
   end
   --nread; // subtract off the last increment
   $fclose(fp);
-    
+
   ospfb = new(pe_h); //, DUT.phasecomp_inst.probe.monitor);
   //ospfb.pc_monitor = DUT.phasecomp_inst.probe.monitor;
   slv = DUT.s_axis_ospfb;
@@ -248,20 +262,18 @@ initial begin
     wait_dsp_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
-    ospfb.monitor();
-    gval = out_golden[gidx++];
-    if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
-      errors++;
-      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
-                gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
-    end else begin
-      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN,
-                gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
-    end
+    //ospfb.monitor();
+    //gval = out_golden[gidx++];
+    //if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
+    //  errors++;
+    //  $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
+    //            gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
+    //end else begin
+    //  $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN,
+    //            gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
+    //end
   end
 
-  // For the counter source the output isn't really valid or used. Primarily the counter has
-  // been helpful in diagnosing and comparing polyphase fir structure with the python simulator
   // wait until we have captured the required number of frames
   // note: not using axis tlast, could possibly use that instead of a full signal
   $display("\nWaiting for OSPFB outputs to fill AXIS capture");
@@ -269,7 +281,7 @@ initial begin
      wait_dsp_cycles(1);
   end
 
-  fp = $fopen("ctr_ospfb_capture.bin", "wb");
+  fp = $fopen("impulse_ospfb_capture.bin", "wb");
   if (!fp) begin
     $display("could not create file...");
     $finish;

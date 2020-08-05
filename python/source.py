@@ -203,7 +203,7 @@ class Impulse(Source):
   def __createSample__(self):
     if (self.modtimer==self.k):
       # TODO: add dynamic weight, may potentially want to add to track scaling, quantization etc.
-      return self.dt(self.M)
+      return self.dt(1)
     else:
       return self.dt(0)
 

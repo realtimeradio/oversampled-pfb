@@ -112,7 +112,8 @@ end
 
 always_comb begin
   tmp_mac = sin + a*h;
-  mac = $signed(tmp_mac[26:11]);
+  mac = $signed(tmp_mac[WIDTH-1:0]);
+  //mac = $signed(tmp_mac[26:11]);
   //mac = $signed(tmp_mac[2*WIDTH-1:WIDTH]);
 end
 //assign mac = sin + a*h;

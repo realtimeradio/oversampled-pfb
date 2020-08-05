@@ -5,7 +5,6 @@
   Up/down counter simulating ramp for 'processing' and 'natural' order ramp
   implements AXIS to support back pressure to hold count value
 
-  TODO: only does proessing order need generator logic for natrual order
 */
 
 module src_ctr #(

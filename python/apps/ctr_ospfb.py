@@ -5,19 +5,19 @@ import struct
 from ospfb import OSPFB, computeLatency, latencyComp
 from source import CounterSource
 
-from taps import CyclicRampTaps
+from taps import CyclicRamp
 
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
 
 if __name__=="__main__":
-  M=64; D=48; P=3;
+  M=64; D=48; P=4;
   fname = "golden_ctr.dat"
   fp = open(fname, 'wb')
 
   Tend = 1000
   SIM_DT = 'int16'
 
-  taps = CyclicRampTaps.genTaps(M, P, D)
+  taps = CyclicRamp.genTaps(M, P, D)
   ospfb = OSPFB(M=M, D=D, P=P, taps=taps, dt=SIM_DT, followHistory=False)
   ospfb.enable()
 

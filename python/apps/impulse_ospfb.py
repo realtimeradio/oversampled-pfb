@@ -14,7 +14,7 @@ from taps import (Ones, HannWin)
 from utils import (TYPES, TYPES_MAP, TYPES_INIT, TYPES_STR_FMT)
 
 if __name__=="__main__":
-  M=32; D=24; P=8;
+  M=64; D=48; P=4;
   NFFT = M
   NFFT_FINE = 128
   FRAMES = 128
@@ -26,7 +26,7 @@ if __name__=="__main__":
   ospfb = OSPFB(M=M, D=D, P=P, taps=taps, dt=SIM_DT, followHistory=False)
   ospfb.enable()
 
-  k = 0
+  k = D+1
   src = Impulse(M, P, D, k, dt=SIM_DT)
 
   # output stack and collection of output frames
@@ -79,7 +79,7 @@ if __name__=="__main__":
         # 2. However, it seems that each golden output ramps up to the full (in the case of
         #    the constant output from 1 to P where the matlab version is constantly output
         #    at 8 from the beginning.
-        (Gdec, gi, ndec, decmod) = golden(np.roll(gx, 7), ospfb.taps, gi, M, D, decmod)
+        (Gdec, gi, ndec, decmod) = golden(np.roll(gx, (M-D)-1), ospfb.taps, gi, M, D, decmod)
 
         ed = st + ndec
         GX[:, st:ed] = Gdec/M # scale back down by M to match
