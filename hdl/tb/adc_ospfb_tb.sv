@@ -16,7 +16,7 @@ parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
 parameter int CONF_WID = 8;
 
 // TODO: need to figure out how to indicate to axis vip it should start capturing
-parameter int FRAMES = 20;
+parameter int FRAMES = 32;
 parameter int SAMP = FRAMES*FFT_LEN;
 
 parameter int FIFO_DEPTH = FFT_LEN/2;
@@ -44,6 +44,7 @@ axis #(.WIDTH(8)) m_axis_fft_status();
 // adc model data source --> dual clock fifo --> ospfb --> axis vip
 ospfb_adc_top #(
   .SRC_PERIOD(ADC_PERIOD),
+  .ADC_BITS(ADC_BITS),
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
   .SAMP(SAMP),
@@ -102,7 +103,7 @@ initial begin
   dsp_clk <= 0; simcycles=0;
   forever #(DSP_PERIOD/2) begin
     dsp_clk = ~dsp_clk;
-    simcycles += (1 & dsp_clk) & ~rst;
+    simcycles += (1 & dsp_clk) & ~DUT.ospfb_inst.hold_rst;//~rst;
   end
 end
 
@@ -184,7 +185,8 @@ generate
     initial begin
       //automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
       //automatic string coeffFile = $psprintf("coeff/hann/h%0d_15.coeff", pp);
-      automatic string coeffFile = $psprintf("coeff/h%0d_16.coeff", pp);
+      //automatic string coeffFile = $psprintf("coeff/h%0d_16.coeff", pp);
+      automatic string coeffFile = $psprintf("coeff/hann/h%0d_4.coeff", pp);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end

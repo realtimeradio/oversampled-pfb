@@ -2,7 +2,10 @@
 `default_nettype none
 
 module ospfb_adc_top #(
+  // ADC parameters
   parameter real SRC_PERIOD=10,
+  parameter int ADC_BITS=12,
+  // OSPFB parameters
   parameter int WIDTH=16,
   parameter int FFT_LEN=64,
   parameter int SAMP=FFT_LEN,
@@ -57,7 +60,8 @@ logic [7:0] m_axis_data_tuser;
 adc_model #(
   .PERIOD(SRC_PERIOD),
   .TWID(WIDTH),
-  .DTYPE("CX")
+  .DTYPE("CX"),
+  .BITS(ADC_BITS)
 ) adc_inst (
   .clk(clka),
   .rst(rst),
@@ -67,23 +71,30 @@ adc_model #(
 );
 
 xpm_fifo_axis #(
-   .CDC_SYNC_STAGES(2),                    // DECIMAL
-   .CLOCKING_MODE("independent_clock"),    // String
-   .ECC_MODE("no_ecc"),                    // String
-   .FIFO_DEPTH(FIFO_DEPTH),                // DECIMAL
-   .FIFO_MEMORY_TYPE("auto"),              // String
-   .PACKET_FIFO("false"),                  // String
-   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),  // DECIMAL
-   .PROG_FULL_THRESH(PROG_FULL_THRESH),    // DECIMAL
-   .RD_DATA_COUNT_WIDTH(DATA_COUNT_WIDTH), // DECIMAL
-   .RELATED_CLOCKS(1),                     // DECIMAL
-   .SIM_ASSERT_CHK(1),                     // DECIMAL
-   .TDATA_WIDTH(2*WIDTH),            // DECIMAL
-   .TDEST_WIDTH(1),                        // DECIMAL
-   .TID_WIDTH(1),                          // DECIMAL
-   .TUSER_WIDTH(1),                        // DECIMAL
-   .USE_ADV_FEATURES("1E0E"),              // String
-   .WR_DATA_COUNT_WIDTH(DATA_COUNT_WIDTH)  // DECIMAL
+   .CDC_SYNC_STAGES(2),
+   .CLOCKING_MODE("independent_clock"),
+   .ECC_MODE("no_ecc"),
+   .FIFO_DEPTH(FIFO_DEPTH),
+   .FIFO_MEMORY_TYPE("auto"),
+   .PACKET_FIFO("false"),
+   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),
+   .PROG_FULL_THRESH(PROG_FULL_THRESH),
+   .RD_DATA_COUNT_WIDTH(DATA_COUNT_WIDTH),
+   .RELATED_CLOCKS(1),
+   .SIM_ASSERT_CHK(1),
+   .TDATA_WIDTH(2*WIDTH),
+   .TDEST_WIDTH(1),
+   .TID_WIDTH(1),
+   .TUSER_WIDTH(1),
+   // for the advanced features refer to documentation
+   // each digit is a hex value, with 4 hex values there are 16 bits to toggle but the
+   // documentation only explains what some of the bits from [0-11] but by default has the 13th
+   // bit set. Comparing the AXIS FIFO with the standard FIFO that this is essentially a wrapper
+   // explains what that bit does and makes sense why it is set here but not explained. However,
+   // even if you force that bit 0 it is ignored and and reset back to 1 in simulation and
+   // synthesis.
+   .USE_ADV_FEATURES("1E0E"),
+   .WR_DATA_COUNT_WIDTH(DATA_COUNT_WIDTH)
 ) xpm_fifo_axis_inst (
    .almost_empty_axis(almost_empty), // 1-bit output: Almost Empty : When asserted, this signal
                                      // indicates that only one more read can be

@@ -10,11 +10,11 @@ def calcVrms(dbm, rload):
   return np.sqrt(rload*dBm2lin(dbm))
 
 if __name__=="__main__":
-  src = ToneGenerator(sigpow_dBm=-6)
 
+  src = ToneGenerator(sigpow_dBm=-6)
   rfdc = RFDC()
 
-  nsamps = 256
+  nsamps = 128
 
   xt = np.zeros(nsamps, dtype=np.complex64)
   xn_re = np.zeros(nsamps, dtype=np.int16)
@@ -24,5 +24,5 @@ if __name__=="__main__":
     xt[i] = s
     xn_im[i], xn_re[i] = rfdc.sample(s)
 
-  # to convert to the converted value
+  # to convert from integer binary back to its decimal value
   # tofracfixed(xn_re, 16, numbits)

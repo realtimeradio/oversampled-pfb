@@ -179,3 +179,15 @@ if __name__=="__main__":
   print(v_frac == v)
 
   # so while this isn't perfect this at least encapsulates the approach 
+
+  # python math has the modf function that will return fractional and whole parts
+  import math.modf
+  v = 3.175
+  f, i = modf(v)
+
+  # so far with what I have here we can then produce some binary
+  i = bin(int(i))
+  f = dec2bin(f, 8)
+  # then we can put these two strings together
+  v = i+"."+f
+  # the next step would be to produce an integer notation

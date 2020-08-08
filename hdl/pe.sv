@@ -110,6 +110,9 @@ always_comb begin
     a = loopbuf_out;
 end
 
+// TODO: need to implement correct MAC with rounding and scaling
+// keeping in mind system verilog gotchas and potentially needing
+// to instance a DSP48E explicitly
 always_comb begin
   tmp_mac = sin + a*h;
   mac = $signed(tmp_mac[WIDTH-1:0]);
