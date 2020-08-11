@@ -2,7 +2,7 @@
 `default_nettype none
 
 import alpaca_ospfb_monitor_pkg::*;
-import alpaca_ospfb_utils_pkg::*;
+import alpaca_ospfb_constants_pkg::*; // TODO: is this a redundant important since monitor imports?
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;

@@ -1,12 +1,13 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-import alpaca_ospfb_utils_pkg::WIDTH;
-import alpaca_ospfb_utils_pkg::COEFF_WID;
-import alpaca_ospfb_utils_pkg::FFT_LEN;
-import alpaca_ospfb_utils_pkg::DEC_FAC;
-import alpaca_ospfb_utils_pkg::PTAPS;
-import alpaca_ospfb_utils_pkg::SRLEN;
+// TODO: ok to import all of constants now?
+import alpaca_ospfb_constants_pkg::WIDTH;
+import alpaca_ospfb_constants_pkg::COEFF_WID;
+import alpaca_ospfb_constants_pkg::FFT_LEN;
+import alpaca_ospfb_constants_pkg::DEC_FAC;
+import alpaca_ospfb_constants_pkg::PTAPS;
+import alpaca_ospfb_constants_pkg::SRLEN;
 
 module top #(parameter WIDTH=16) (
   input wire logic clk,

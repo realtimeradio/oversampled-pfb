@@ -1,6 +1,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
+import alpaca_ospfb_constants::*;
 import alpaca_ospfb_utils_pkg::*;
 
 parameter CLK_PER = 10;               // clock period [ns]

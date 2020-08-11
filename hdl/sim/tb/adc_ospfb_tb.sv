@@ -2,7 +2,7 @@
 `default_nettype none
 
 import alpaca_ospfb_monitor_pkg::*;
-import alpaca_ospfb_utils_pkg::*;
+import alpaca_ospfb_constants_pkg::*;
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;
@@ -15,10 +15,6 @@ parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
 
 parameter int CONF_WID = 8;
 
-// impulse parameters
-parameter int IMPULSE_PHASE = DEC_FAC+1;
-parameter int PULSE_VAL = 1;
-
 // TODO: need to figure out how to indicate to axis vip it should start capturing
 parameter int FRAMES = 32;
 parameter int SAMP = FRAMES*FFT_LEN;
@@ -27,7 +23,7 @@ parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
 
-module impulse_ospfb_tb();
+module adc_ospfb_tb();
 
 logic adc_clk, dsp_clk, rst, en;
 
@@ -45,8 +41,10 @@ logic vip_full;
 axis #(.WIDTH(2*WIDTH)) m_axis_fir();
 axis #(.WIDTH(8)) m_axis_fft_status();
 
-// impulse data source --> dual clock fifo --> ospfb --> axis vip
-ospfb_impulse_top #(
+// adc model data source --> dual clock fifo --> ospfb --> axis vip
+ospfb_adc_top #(
+  .SRC_PERIOD(ADC_PERIOD),
+  .ADC_BITS(ADC_BITS),
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
   .SAMP(SAMP),
@@ -54,8 +52,6 @@ ospfb_impulse_top #(
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
-  .IMPULSE_PHASE(IMPULSE_PHASE),
-  .PULSE_VAL(PULSE_VAL),
   .SRLEN(SRLEN),
   .CONF_WID(CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
@@ -187,10 +183,10 @@ generate
 
     // initialize filter coeff
     initial begin
-      automatic string coeffFile = $psprintf("coeff/ones/h%0d_unit_16.coeff", pp);
       //automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
       //automatic string coeffFile = $psprintf("coeff/hann/h%0d_15.coeff", pp);
       //automatic string coeffFile = $psprintf("coeff/h%0d_16.coeff", pp);
+      automatic string coeffFile = $psprintf("coeff/hann/h%0d_4.coeff", pp);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end
@@ -262,7 +258,7 @@ initial begin
     wait_dsp_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
-    //ospfb.monitor();
+    ospfb.monitor();
     //gval = out_golden[gidx++];
     //if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
     //  errors++;
@@ -281,7 +277,7 @@ initial begin
      wait_dsp_cycles(1);
   end
 
-  fp = $fopen("impulse_ospfb_capture.bin", "wb");
+  fp = $fopen("adc_ospfb_capture.bin", "wb");
   if (!fp) begin
     $display("could not create file...");
     $finish;

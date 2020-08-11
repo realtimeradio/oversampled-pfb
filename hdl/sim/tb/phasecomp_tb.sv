@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-import alpaca_ospfb_utils_pkg::*;
+import alpaca_ospfb_constants_pkg::*;
 import alpaca_ospfb_ix_pkg::*;
 
 parameter int DEPTH = FFT_LEN*2;          // 2M

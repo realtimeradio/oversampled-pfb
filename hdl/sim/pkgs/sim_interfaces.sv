@@ -1,7 +1,7 @@
 `default_nettype none
 
 import alpaca_ospfb_ix_pkg::*;
-import alpaca_ospfb_utils_pkg::*;
+import alpaca_ospfb_constants_pkg::*;
 
 interface delayline_ix #(WIDTH) (
   input wire logic clk
@@ -10,19 +10,19 @@ interface delayline_ix #(WIDTH) (
   logic [WIDTH-1:0] din, dout;
 endinterface
 
-interface axis #(WIDTH) ();
-  logic [WIDTH-1:0] tdata;
-  logic tvalid, tready;
-
-  modport MST (input tready, output tdata, tvalid);
-  modport SLV (input tdata, tvalid, output tready);
-
-  function string print();
-    automatic string s = $psprintf("{tvalid: 0b%s, tready:0b%s, tdata:0x%s}",
-                                    BINFMT, BINFMT, DATFMT);
-    return $psprintf(s, tvalid, tready, tdata);
-  endfunction
-endinterface
+//interface axis #(WIDTH) ();
+//  logic [WIDTH-1:0] tdata;
+//  logic tvalid, tready;
+//
+//  modport MST (input tready, output tdata, tvalid);
+//  modport SLV (input tdata, tvalid, output tready);
+//
+//  function string print();
+//    automatic string s = $psprintf("{tvalid: 0b%s, tready:0b%s, tdata:0x%s}",
+//                                    BINFMT, BINFMT, DATFMT);
+//    return $psprintf(s, tvalid, tready, tdata);
+//  endfunction
+//endinterface
 
 // TODO: food for thought...
 //typedef logic [WIDTH-1:0] thingy_t [SRLEN];

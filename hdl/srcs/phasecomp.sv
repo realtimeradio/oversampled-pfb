@@ -1,10 +1,11 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-import alpaca_ospfb_utils_pkg::phasecomp_state_t;
-import alpaca_ospfb_utils_pkg::FILLA;
-import alpaca_ospfb_utils_pkg::FILLB;
-import alpaca_ospfb_utils_pkg::ERR;
+// TODO: can we just important everything from constants now?
+import alpaca_ospfb_constants_pkg::phasecomp_state_t;
+import alpaca_ospfb_constants_pkg::FILLA;
+import alpaca_ospfb_constants_pkg::FILLB;
+import alpaca_ospfb_constants_pkg::ERR;
 
 // Module: PhaseComp - Phase Compensation Buffer for the OS PFB
 

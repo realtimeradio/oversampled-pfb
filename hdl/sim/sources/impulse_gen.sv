@@ -130,7 +130,7 @@ endmodule
   Impulse generator test bench
 */
 
-import alpaca_ospfb_utils_pkg::*;
+import alpaca_ospfb_constants_pkg::*;
 module test_impulse_generator;
 
 // translating to ospfb parameters

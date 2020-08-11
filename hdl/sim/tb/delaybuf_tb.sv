@@ -2,6 +2,7 @@
 `default_nettype none
 
 import alpaca_ospfb_monitor_pkg::*;
+import alpaca_ospfb_constants_pkg::*; //TODO: redundant import?
 import alpaca_ospfb_utils_pkg::*;
 
 // TODO: I am not liking SRLEN and DEPTH being thrown around... starting to cause errors

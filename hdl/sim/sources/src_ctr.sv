@@ -144,7 +144,7 @@ endmodule
   Source counter test bench
 */
 
-import alpaca_ospfb_utils_pkg::*;
+import alpaca_ospfb_constants_pkg::*;
 module test_src_ctr;
 
 // emulates OSPFB parameters
