@@ -13,11 +13,9 @@ parameter DATA_NUM = 2*DEPTH/SRLEN-1;
 parameter real ADC_PERIOD = 12;
 parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
 
-parameter int CONF_WID = 8;
-
 // impulse parameters
 parameter int IMPULSE_PHASE = DEC_FAC+1;
-parameter int PULSE_VAL = 1;
+parameter int PULSE_VAL = FFT_LEN; //scaling schedule at 1/N
 
 // TODO: need to figure out how to indicate to axis vip it should start capturing
 parameter int FRAMES = 32;
@@ -43,7 +41,7 @@ logic [$clog2(FIFO_DEPTH)-1:0] rd_count, wr_count;
 logic vip_full;
 
 axis #(.WIDTH(2*WIDTH)) m_axis_fir();
-axis #(.WIDTH(8)) m_axis_fft_status();
+axis #(.WIDTH(FFT_STAT_WID)) m_axis_fft_status();
 
 // impulse data source --> dual clock fifo --> ospfb --> axis vip
 ospfb_impulse_top #(
@@ -57,7 +55,7 @@ ospfb_impulse_top #(
   .IMPULSE_PHASE(IMPULSE_PHASE),
   .PULSE_VAL(PULSE_VAL),
   .SRLEN(SRLEN),
-  .CONF_WID(CONF_WID),
+  .CONF_WID(FFT_CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),
   .PROG_FULL_THRESH(PROG_FULL_THRESH)
@@ -189,8 +187,7 @@ generate
     initial begin
       automatic string coeffFile = $psprintf("coeff/ones/h%0d_unit_16.coeff", pp);
       //automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
-      //automatic string coeffFile = $psprintf("coeff/hann/h%0d_15.coeff", pp);
-      //automatic string coeffFile = $psprintf("coeff/h%0d_16.coeff", pp);
+      //automatic string coeffFile = $psprintf("coeff/hann/h%0d_%0d_%0d_4.coeff", pp, FFT_LEN, PTAPS); 
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end
@@ -250,7 +247,7 @@ initial begin
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
   rst <= 1;
-  wait_dsp_cycles(299); // reset the pipeline
+  wait_dsp_cycles(FFT_LEN*PTAPS); // reset the pipeline
   @(posedge dsp_clk);
   @(negedge dsp_clk) rst = 0; en = 1;
 

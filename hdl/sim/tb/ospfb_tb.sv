@@ -13,8 +13,6 @@ parameter DATA_NUM = 2*DEPTH/SRLEN-1;
 parameter real ADC_PERIOD = 12;
 parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
 
-parameter int CONF_WID = 8;
-
 parameter int SAMP = 64;
 
 parameter int FIFO_DEPTH = FFT_LEN/2;
@@ -49,7 +47,7 @@ ospfb_ctr_top #(
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN),
-  .CONF_WID(CONF_WID),
+  .CONF_WID(FFT_CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),
   .PROG_FULL_THRESH(PROG_FULL_THRESH)
@@ -177,7 +175,8 @@ generate
 
     // initialize filter coeff
     initial begin
-      automatic string coeffFile = $psprintf("coeff/cycramp/h_cycramp_%0d.coeff", pp);
+      automatic string coeffFile = "coeff/cycramp/h_cycramp_upto_2048.coeff";
+      $display("opening %0s", coeffFile);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end
@@ -195,6 +194,7 @@ initial begin
   logic signed [WIDTH-1:0] gin;
   automatic int nread = 0;
   automatic int size = 100;
+  string fname;
   int fp;
   int err;
 
@@ -202,10 +202,12 @@ initial begin
   virtual axis #(.WIDTH(2*WIDTH)) slv; // view into the data source interface
 
   int errors;
+  int x_errs;
   int gidx;
   logic signed [WIDTH-1:0] gval;
 
-  fp = $fopen("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr.dat", "rb");
+  fname = $psprintf("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr_%0d_%0d_%0d.dat", FFT_LEN, DEC_FAC, PTAPS); 
+  fp = $fopen(fname, "rb");
   if (!fp) begin
     $display("could not open data file...");
     $finish;
@@ -236,7 +238,7 @@ initial begin
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
   rst <= 1;
-  wait_dsp_cycles(299); // reset the pipeline
+  wait_dsp_cycles((FFT_LEN*PTAPS); // reset the pipeline
   @(posedge dsp_clk);
   @(negedge dsp_clk) rst = 0; en = 1;
 
@@ -248,12 +250,17 @@ initial begin
     wait_dsp_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     $display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
-    ospfb.monitor();
+    //ospfb.monitor();
     gval = out_golden[gidx++];
-    if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
-      errors++;
+
+    if (m_axis_fir.tdata[WIDTH-1:0] === 'x || m_axis_fir.tdata[2*WIDTH-1:WIDTH] === 'x) begin
+      x_errs++;
       $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
                 gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
+    end else if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
+      errors++;
+      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
+              gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
     end else begin
       $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN,
                 gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
@@ -281,7 +288,11 @@ initial begin
   end
   $fclose(fp);
 
-  $display("*** Simulation complete: Errors=%4d ***", errors);
+  $display("*** Simulation complete: Errors=%4d X_Errors=%4d***", errors, x_errs);
+  // Note the x_errs is meant to catch where the output is not driven correctly because this
+  // should techincally still be an error and undesired opeartion. However right now we will
+  // always have FFT_LEN x_errs becasue the phasecomp buffer is not initialized and reset
+  // correctly.
   $finish;
 end
 

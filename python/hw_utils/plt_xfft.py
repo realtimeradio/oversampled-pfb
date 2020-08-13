@@ -15,6 +15,7 @@ if __name__=="__main__":
   parser.add_argument('nframes', type=int, help='Number of FFT frames of length nfft')
   parser.add_argument('-X', '--transform', action='store_true', help="perform FFT on input file")
   parser.add_argument('-p', '--plot', action='store_true', help="plot the data")
+  parser.add_argument('-l', '--linear', action='store_true', help="plot linear")
   args = parser.parse_args()
 
   # parase arguments
@@ -35,7 +36,10 @@ if __name__=="__main__":
   if (args.transform):
     X = fft(X, NFFT)
 
-  magX = 20*log10(abs(X+.0001))
+  if (args.linear):
+    magX = np.real(X)
+  else:
+    magX = 20*log10(abs(X+.0001))
 
   if (args.plot):
     PLT_WIDTH = 4

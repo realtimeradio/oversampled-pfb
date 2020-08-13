@@ -9,7 +9,8 @@ module OSPFB #(
   parameter SRT_PHA=23,  // (DEC_FAC-1) modtimer decimation phase start (which port delivered first)
   parameter PTAPS=8,
   parameter SRLEN=8,
-  parameter CONF_WID=8
+  parameter CONF_WID=8,
+  parameter TUSER_WID=8
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -23,7 +24,7 @@ module OSPFB #(
   axis.MST m_axis_fft_status,           // FFT status for overflow
   axis.MST m_axis_data,                 // OSPFB output data
   output logic m_axis_data_tlast,
-  output logic [7:0] m_axis_data_tuser,
+  output logic [TUSER_WID-1:0] m_axis_data_tuser,
 
   output logic event_frame_started,
   output logic event_tlast_unexpected,
@@ -223,20 +224,23 @@ always_comb begin
 
   // ospfb.py top-level equivalent producing the vin to start the process
   // why modtimer < dec_fac and not dec_fac-1 like in src counter pass through?
-  s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
-
-  m_axis_fir.tvalid = (vout_re & vout_im);
-  m_axis_fir.tdata  = {sout_im, sout_re};
-
-  // default configuration values {pad (if needed), scale_sched, fwd/inv xform}
-  s_axis_config.tdata = {1'b0, 2'b00, 2'b00, 2'b00, 1'b0};
-  s_axis_config.tvalid = 1'b0;
+  s_axis.tready = 1'b0;
   /*
   TODO: where to use m_axis_data.tready for debug monitoring of slave. If m_axis_data.tready
     isn't used for anything meaningful vivado synthesis throws a warning but may not be an issue.
     Will get unexpected synthesis behavior if I don't remove this when testing it
   */
-  vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
+  vin = 1'b0;
+
+  m_axis_fir.tvalid = (vout_re & vout_im);
+  m_axis_fir.tdata  = {sout_im, sout_re};
+
+  // TODO: only set once but should be parameterized so that I don't forget it when moving
+  // between M for testing
+  // default configuration values {pad (if needed), scale_sched, fwd/inv xform}
+  s_axis_config.tdata = {1'b0, 2'b10, 2'b10, 2'b10, 1'b0};
+  //s_axis_config.tdata = {3'b0, 2'b00, 2'b10, 2'b10, 2'b10, 2'b10, 2'b10, 1'b0};
+  s_axis_config.tvalid = 1'b0;
 
   /*
   TODO: supporting arbitrary dec fac
@@ -253,6 +257,8 @@ always_comb begin
           hold_rst = 1'b0;
           s_axis_config.tvalid = 1'b1;   // load the inverse transform and scaling schedule
 
+          s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
+          vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0; // shouldn't this be in my states as well?
           // move first to FEEDBACK. Although we are loading one sample now this is the last
           // sample of a FORWARD state operation (loading at port 0 then wrapping to port D-1)
           din_re = s_axis.tdata[WIDTH-1:0];
@@ -265,6 +271,8 @@ always_comb begin
 
       FORWARD: begin
         hold_rst = 1'b0;
+
+        s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
         vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
         din_re = s_axis.tdata[WIDTH-1:0];
         din_im = s_axis.tdata[2*WIDTH-1:WIDTH];
@@ -276,6 +284,7 @@ always_comb begin
 
       FEEDBACK: begin
         hold_rst = 1'b0;
+        s_axis.tready = (modtimer < DEC_FAC) ? 1'b1 : 1'b0;
         vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
         din_re = 32'hdeadbeef; // bogus data for testing, should not be accepted to delaybufs
         din_im = 32'hbeefdead;

@@ -2,7 +2,7 @@
 `default_nettype none
 
 import alpaca_ospfb_monitor_pkg::*;
-import alpaca_ospfb_constants_pkg::*;
+import alpaca_ospfb_constants_pkg::*; // TODO: is this a redundant important since monitor imports?
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;
@@ -12,8 +12,6 @@ parameter DATA_NUM = 2*DEPTH/SRLEN-1;
 // determine ADC clk period given the DSP clk
 parameter real ADC_PERIOD = 12;
 parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
-
-parameter int CONF_WID = 8;
 
 // TODO: need to figure out how to indicate to axis vip it should start capturing
 parameter int FRAMES = 32;
@@ -39,7 +37,7 @@ logic [$clog2(FIFO_DEPTH)-1:0] rd_count, wr_count;
 logic vip_full;
 
 axis #(.WIDTH(2*WIDTH)) m_axis_fir();
-axis #(.WIDTH(8)) m_axis_fft_status();
+axis #(.WIDTH(FFT_STAT_WID)) m_axis_fft_status();
 
 // adc model data source --> dual clock fifo --> ospfb --> axis vip
 ospfb_adc_top #(
@@ -53,7 +51,7 @@ ospfb_adc_top #(
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN),
-  .CONF_WID(CONF_WID),
+  .CONF_WID(FFT_CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),
   .PROG_FULL_THRESH(PROG_FULL_THRESH)
@@ -184,9 +182,7 @@ generate
     // initialize filter coeff
     initial begin
       //automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
-      //automatic string coeffFile = $psprintf("coeff/hann/h%0d_15.coeff", pp);
-      //automatic string coeffFile = $psprintf("coeff/h%0d_16.coeff", pp);
-      automatic string coeffFile = $psprintf("coeff/hann/h%0d_4.coeff", pp);
+      automatic string coeffFile = $psprintf("coeff/hann/h%0d_%0d_%0d_4.coeff", pp, FFT_LEN, PTAPS);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
     end
@@ -246,7 +242,7 @@ initial begin
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
   rst <= 1;
-  wait_dsp_cycles(299); // reset the pipeline
+  wait_dsp_cycles(FFT_LEN*PTAPS); // reset the pipeline
   @(posedge dsp_clk);
   @(negedge dsp_clk) rst = 0; en = 1;
 

@@ -30,9 +30,12 @@ parameter PERIOD = 10;          // simulation clock period
   coefficients still results in a decent (no truncation/quantization effects) spectrum.
   Comparing this to the python simulator the outputs are similar.
 */
-parameter ADC_BITS = 8;         // simulation ADC effective bit resolution
-parameter WIDTH = 16;           // axi-sample word width, ADC samples padded to this width
-parameter COEFF_WID = 16;       // filter coefficient word width
+parameter ADC_BITS = 8;          // simulation ADC effective bit resolution
+parameter WIDTH = 16;            // axi-sample word width, ADC samples padded to this width
+parameter COEFF_WID = 16;        // filter coefficient word width
+
+parameter int FFT_CONF_WID = 8; // fft configuration width (set inverse xform and scale schedule
+parameter int FFT_STAT_WID = 8;  // fft status width (overflow and optional Xk index)
 
 // TODO: FFT_LEN-DEC_FAC an issue here because need to build out the correct length
 parameter SRLEN = 4;
