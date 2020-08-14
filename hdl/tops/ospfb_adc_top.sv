@@ -25,8 +25,6 @@ module ospfb_adc_top #(
   input wire logic clkb,
   input wire logic rst,
   input wire logic en,
-  // for checking fir outputs
-  axis.MST m_axis_fir,
 
   // fft singals
   axis.MST m_axis_fft_status,
@@ -159,7 +157,6 @@ OSPFB #(
   .rst(rst),
   .en(en),
   .s_axis(s_axis_ospfb),
-  .m_axis_fir(m_axis_fir),
   .m_axis_fft_status(m_axis_fft_status),
   .m_axis_data(m_axis_data),
   .m_axis_data_tlast(m_axis_data_tlast),

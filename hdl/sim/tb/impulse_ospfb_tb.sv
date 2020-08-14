@@ -2,25 +2,22 @@
 `default_nettype none
 
 import alpaca_ospfb_monitor_pkg::*;
-import alpaca_ospfb_constants_pkg::*; // TODO: redudant import?
+import alpaca_ospfb_constants_pkg::*;
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;
 parameter LOOP_NUM = (FFT_LEN-DEC_FAC)/SRLEN - 1;
 parameter DATA_NUM = 2*DEPTH/SRLEN-1;
 
-// determine ADC clk period given the DSP clk
-parameter real ADC_PERIOD = 12;
-parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
-
 // impulse parameters
 parameter int IMPULSE_PHASE = DEC_FAC+1;
-parameter int PULSE_VAL = FFT_LEN; //scaling schedule at 1/N
+parameter int PULSE_VAL = FFT_LEN*FFT_LEN; //scaling schedule at 1/N
 
 // TODO: need to figure out how to indicate to axis vip it should start capturing
 parameter int FRAMES = 32;
 parameter int SAMP = FRAMES*FFT_LEN;
 
+// dc fifo parameters
 parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
@@ -40,7 +37,6 @@ logic [$clog2(FIFO_DEPTH)-1:0] rd_count, wr_count;
 
 logic vip_full;
 
-axis #(.WIDTH(2*WIDTH)) m_axis_fir();
 axis #(.WIDTH(FFT_STAT_WID)) m_axis_fft_status();
 
 // impulse data source --> dual clock fifo --> ospfb --> axis vip
@@ -64,8 +60,6 @@ ospfb_impulse_top #(
   .clkb(dsp_clk),
   .rst(rst),
   .en(en),
-  // for checking fir outputs
-  .m_axis_fir(m_axis_fir),
   // fft signals
   .m_axis_fft_status(m_axis_fft_status),
 
@@ -186,7 +180,6 @@ generate
     // initialize filter coeff
     initial begin
       automatic string coeffFile = $psprintf("coeff/ones/h%0d_unit_16.coeff", pp);
-      //automatic string coeffFile = $psprintf("coeff/ones/h%0d_ones_12.coeff", pp);
       //automatic string coeffFile = $psprintf("coeff/hann/h%0d_%0d_%0d_4.coeff", pp, FFT_LEN, PTAPS); 
       $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
       $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
@@ -200,49 +193,17 @@ string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
 
 initial begin
 
-  // read in golden data
-  logic signed [WIDTH-1:0] fir_golden[];
-  logic signed [WIDTH-1:0] out_golden[];
-  logic signed [WIDTH-1:0] gin;
-  automatic int nread = 0;
-  automatic int size = 100;
   int fp;
-  int err;
+  int errors;
 
   ospfb_t ospfb;
   virtual axis #(.WIDTH(2*WIDTH)) slv; // view into the data source interface
 
-  int errors;
-  int gidx;
-  logic signed [WIDTH-1:0] gval;
-
-  fp = $fopen("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr.dat", "rb");
-  if (!fp) begin
-    $display("could not open data file...");
-    $finish;
-  end
-
-  fir_golden = new[size];
-  out_golden = new[size];
-  while(!$feof(fp)) begin
-    err = $fscanf(fp, "%u", gin);
-    fir_golden[nread] = gin;
-    err = $fscanf(fp, "%u", gin);
-    out_golden[nread++] = gin;
-    if (nread == size-1) begin
-      size+=100;
-      fir_golden = new[size](fir_golden);
-      out_golden = new[size](out_golden);
-    end
-  end
-  --nread; // subtract off the last increment
-  $fclose(fp);
-
   ospfb = new(pe_h); //, DUT.phasecomp_inst.probe.monitor);
-  //ospfb.pc_monitor = DUT.phasecomp_inst.probe.monitor;
+  //ospfb.pc_monitor = DUT.ospfb_inst.phasecomp_inst.probe.monitor;
+
   slv = DUT.s_axis_ospfb;
   errors = 0;
-  gidx = 0;
 
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
@@ -251,31 +212,17 @@ initial begin
   @(posedge dsp_clk);
   @(negedge dsp_clk) rst = 0; en = 1;
 
-  // wait until we get out of reset from the ospfb (INIT and WAITFFT states)
+  // wait until we get out of reset from the ospfb (WAIT_FIFO state)
   @(posedge slv.tready);
 
   $display("Cycle=%4d: Finished init...", simcycles);
-  for (int i=0; i < nread; i++) begin // 10*FFT_LEN+1; i++) begin
-    wait_dsp_cycles(1);
-    //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
-    $display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
-    //ospfb.monitor();
-    //gval = out_golden[gidx++];
-    //if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
-    //  errors++;
-    //  $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
-    //            gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
-    //end else begin
-    //  $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN,
-    //            gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
-    //end
-  end
-
-  // wait until we have captured the required number of frames
-  // note: not using axis tlast, could possibly use that instead of a full signal
+  // wait until we have captured the requested number of frames
+  // TODO: not using tlast, use this to report status or for ctrl instead full signal
   $display("\nWaiting for OSPFB outputs to fill AXIS capture");
   while (~vip_full) begin
-     wait_dsp_cycles(1);
+    wait_dsp_cycles(1);
+    //$display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
+    //ospfb.monitor();
   end
 
   fp = $fopen("impulse_ospfb_capture.bin", "wb");

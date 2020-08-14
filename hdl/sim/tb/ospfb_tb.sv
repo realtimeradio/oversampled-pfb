@@ -2,16 +2,12 @@
 `default_nettype none
 
 import alpaca_ospfb_monitor_pkg::*;
-import alpaca_ospfb_constants_pkg::*; // TODO: is this a redundant important since monitor imports?
+import alpaca_ospfb_constants_pkg::*;
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;
 parameter LOOP_NUM = (FFT_LEN-DEC_FAC)/SRLEN - 1;
 parameter DATA_NUM = 2*DEPTH/SRLEN-1;
-
-// determine ADC clk period given the DSP clk
-parameter real ADC_PERIOD = 12;
-parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD;
 
 parameter int SAMP = 64;
 
@@ -34,7 +30,6 @@ logic [$clog2(FIFO_DEPTH)-1:0] rd_count, wr_count;
 
 logic vip_full;
 
-axis #(.WIDTH(2*WIDTH)) m_axis_fir();
 axis #(.WIDTH(8)) m_axis_fft_status();
 
 // ctr data source --> dual clock fifo --> ospfb --> axis vip
@@ -56,8 +51,6 @@ ospfb_ctr_top #(
   .clkb(dsp_clk),
   .rst(rst),
   .en(en),
-  // for checking fir outputs
-  .m_axis_fir(m_axis_fir),
   // fft signals
   .m_axis_fft_status(m_axis_fft_status),
 
@@ -205,6 +198,8 @@ initial begin
   int x_errs;
   int gidx;
   logic signed [WIDTH-1:0] gval;
+  logic signed [WIDTH-1:0] pc_out_re;
+  logic signed [WIDTH-1:0] pc_out_im;
 
   fname = $psprintf("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr_%0d_%0d_%0d.dat", FFT_LEN, DEC_FAC, PTAPS); 
   fp = $fopen(fname, "rb");
@@ -238,7 +233,7 @@ initial begin
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
   rst <= 1;
-  wait_dsp_cycles((FFT_LEN*PTAPS); // reset the pipeline
+  wait_dsp_cycles((FFT_LEN*PTAPS)); // reset the pipeline
   @(posedge dsp_clk);
   @(negedge dsp_clk) rst = 0; en = 1;
 
@@ -249,21 +244,20 @@ initial begin
   for (int i=0; i < nread; i++) begin // 10*FFT_LEN+1; i++) begin
     wait_dsp_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
-    $display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
+    //$display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
     //ospfb.monitor();
     gval = out_golden[gidx++];
+    pc_out_re = DUT.ospfb_inst.sout_re;
+    pc_out_im = DUT.ospfb_inst.sout_im;
 
-    if (m_axis_fir.tdata[WIDTH-1:0] === 'x || m_axis_fir.tdata[2*WIDTH-1:WIDTH] === 'x) begin
+    if (pc_out_re === 'x || pc_out_im === 'x) begin
       x_errs++;
-      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
-                gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
-    end else if (m_axis_fir.tdata[WIDTH-1:0] != gval || m_axis_fir.tdata[2*WIDTH-1:WIDTH] != gval) begin
+      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED, gval, pc_out_re, pc_out_im, RST);
+    end else if (pc_out_re != gval || pc_out_im != gval) begin
       errors++;
-      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED,
-              gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
+      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", RED, gval, pc_out_re, pc_out_im, RST);
     end else begin
-      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN,
-                gval, m_axis_fir.tdata[WIDTH-1:0], m_axis_fir.tdata[2*WIDTH-1:WIDTH], RST);
+      $display("%s{expected: 0x%0x, observed: 0x%0x, observed: 0x%0x}%s", GRN, gval, pc_out_re, pc_out_im, RST);
     end
   end
 

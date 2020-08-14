@@ -8,8 +8,6 @@ parameter string GRN = "\033\[0;32m";
 parameter string MGT = "\033\[0;35m";
 parameter string RST = "\033\[0m";
 
-parameter PERIOD = 10;          // simulation clock period
-
 /*
   TODO: implement correct arithmetic
   The current hardware does not correctly compute arithmetic, rounding and scaling (shifting)
@@ -41,10 +39,15 @@ parameter int FFT_STAT_WID = 8;  // fft status width (overflow and optional Xk i
 parameter SRLEN = 4;
 
 // testing smaller modules (DelayBuf, SRLShiftReg, set DEPTH=FFT_LEN)
-parameter int  FFT_LEN = 64;               // (M)   polyphase branches
-parameter real OSRATIO = 3.0/4.0;          // (M/D) oversampling ratio
-parameter int  DEC_FAC = FFT_LEN*OSRATIO;  // (D)   decimation factor 
-parameter PTAPS = 4;                       // (P)   polyphase taps corresponds to number of PEs
+parameter int  FFT_LEN = 64;                    // (M)   polyphase branches
+parameter real OSRATIO = 3.0/4.0;               // (M/D) oversampling ratio
+parameter int  DEC_FAC = FFT_LEN*OSRATIO;       // (D)   decimation factor
+parameter PTAPS = 4;                            // (P)   polyphase taps corresponds to number of PEs
+
+// determine ADC clk period given the DSP clk
+parameter real ADC_PERIOD = 12;                 // ADC simulation clock period
+parameter real DSP_PERIOD = OSRATIO*ADC_PERIOD; // oversampled DSP simulation clock period
+parameter real PERIOD = DSP_PERIOD;             // general period for other modules
 
 parameter string CYCFMT = $psprintf("%%%0d%0s",4, "d");
 parameter string BINFMT = $psprintf("%%%0d%0s",1, "b");

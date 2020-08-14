@@ -152,7 +152,6 @@ OSPFB #(
   .rst(rst),
   .en(en),
   .s_axis(s_axis_ospfb),
-  //.m_axis_fir(m_axis_fir),
   .m_axis_fft_status(m_axis_fft_status),
   .m_axis_data(m_axis_data),
   .m_axis_data_tlast(m_axis_tlast),

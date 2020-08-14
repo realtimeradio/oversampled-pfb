@@ -20,7 +20,6 @@ module OSPFB #(
   // sample each cycle as noted in the AMBA AXIS recommendation for tready implementation
   axis.SLV s_axis,                      // upstream input data
 
-  axis.MST m_axis_fir,                  // TODO: temporary m_axis for fir data to test adding fft.
   axis.MST m_axis_fft_status,           // FFT status for overflow
   axis.MST m_axis_data,                 // OSPFB output data
   output logic m_axis_data_tlast,
@@ -231,9 +230,6 @@ always_comb begin
     Will get unexpected synthesis behavior if I don't remove this when testing it
   */
   vin = 1'b0;
-
-  m_axis_fir.tvalid = (vout_re & vout_im);
-  m_axis_fir.tdata  = {sout_im, sout_re};
 
   // TODO: only set once but should be parameterized so that I don't forget it when moving
   // between M for testing
