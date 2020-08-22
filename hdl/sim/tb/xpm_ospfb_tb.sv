@@ -15,7 +15,9 @@ parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
 
-module ospfb_tb();
+parameter string BASE_COEF_FILE = "coeff/cycramp/h_cycramp_upto_2048.coeff";
+
+module xpm_ospfb_tb();
 
 logic adc_clk, dsp_clk, rst, en;
 
@@ -32,12 +34,13 @@ logic vip_full;
 
 axis #(.WIDTH(8)) m_axis_fft_status();
 
-// ctr data source --> dual clock fifo --> ospfb --> axis vip
-ospfb_ctr_top #(
+// ctr data source --> dual clock fifo --> xpm_ospfb --> axis vip
+xpm_ospfb_ctr_top #(
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
   .ORDER("natural"),
   .COEFF_WID(COEFF_WID),
+  .BASE_COEF_FILE(BASE_COEF_FILE),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
@@ -70,8 +73,6 @@ ospfb_ctr_top #(
   .vip_full(vip_full)
 );
 
-BindFiles bf();
-
 // tasks to wait for a cycle in each clock domain
 task wait_adc_cycles(int cycles=1);
   repeat(cycles)
@@ -103,84 +104,10 @@ initial begin
   end
 end
 
-pe_t pe_h[PTAPS];
-/*
-  TODO: Why do I need the packed array? I know it has to do with references (pointers in a C
-  sense) but why can I not use a single array to hold the reference to pass to the constructor.
-  Instead to get the correct handle I needed to create a packed array to store all the handles
-  at one time.
-*/
-//sr_probe_t sr_sumbuf_h[PTAPS][NUM];
-//sr_probe_t sr_databuf_h[PTAPS][DATA_NUM];
-//sr_probe_t sr_loopbuf_h[PTAPS][LOOP_NUM];
-
-import alpaca_ospfb_ix_pkg::probe;
-probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_sumbuf_h[PTAPS][NUM];
-probe #(.WIDTH(1), .DEPTH(SRLEN))     sr_vldbuf_h[PTAPS][NUM];
-probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_loopbuf_h[PTAPS][LOOP_NUM];
-probe #(.WIDTH(WIDTH), .DEPTH(SRLEN)) sr_databuf_h[PTAPS][DATA_NUM];
-
-genvar pp;
-genvar mm;
-generate
-  for (pp=0; pp < PTAPS; pp++) begin
-    for (mm=0; mm < NUM; mm++) begin
-      initial begin
-        sr_sumbuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].sumbuf.gen_delay.sr[mm].probe.monitor;
-        sr_vldbuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].validbuf.gen_delay.sr[mm].probe.monitor;
-      end
-    end
-
-    for (mm=0; mm < DATA_NUM; mm++) begin
-      initial begin
-        sr_databuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].databuf.gen_delay.sr[mm].probe.monitor;
-      end
-    end
-
-    for (mm=0; mm < LOOP_NUM; mm++) begin
-      initial begin
-        sr_loopbuf_h[pp][mm] = DUT.ospfb_inst.fir_re.pe[pp].loopbuf.gen_delay.sr[mm].probe.monitor;
-
-      end
-    end
-
-    initial begin
-      pe_h[pp] = new;
-      pe_h[pp].sumbuf = new(DUT.ospfb_inst.fir_re.pe[pp].sumbuf.probe.monitor,
-                            DUT.ospfb_inst.fir_re.pe[pp].sumbuf.headSR.probe.monitor,
-                            sr_sumbuf_h[pp]);
-
-      pe_h[pp].vldbuf = new(DUT.ospfb_inst.fir_re.pe[pp].validbuf.probe.monitor,
-                            DUT.ospfb_inst.fir_re.pe[pp].validbuf.headSR.probe.monitor,
-                            sr_vldbuf_h[pp]);
-
-      pe_h[pp].databuf = new(DUT.ospfb_inst.fir_re.pe[pp].databuf.probe.monitor,
-                             DUT.ospfb_inst.fir_re.pe[pp].databuf.headSR.probe.monitor,
-                             sr_databuf_h[pp]);
-
-      pe_h[pp].loopbuf = new(DUT.ospfb_inst.fir_re.pe[pp].loopbuf.probe.monitor,
-                             DUT.ospfb_inst.fir_re.pe[pp].loopbuf.headSR.probe.monitor,
-                             sr_loopbuf_h[pp]);
-
-      pe_h[pp].mac = DUT.ospfb_inst.fir_re.pe[pp].probe.monitor;
-
-    end
-
-    // initialize filter coeff
-    initial begin
-      automatic string coeffFile = "coeff/cycramp/h_cycramp_upto_2048.coeff";
-      $display("opening %0s", coeffFile);
-      $readmemh(coeffFile, DUT.ospfb_inst.fir_re.pe[pp].coeff_ram);
-      $readmemh(coeffFile, DUT.ospfb_inst.fir_im.pe[pp].coeff_ram);
-    end
-  end
-endgenerate
-
 parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
 string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
 
 initial begin
-
   // read in golden data
   logic signed [WIDTH-1:0] fir_golden[];
   logic signed [WIDTH-1:0] out_golden[];
@@ -191,13 +118,14 @@ initial begin
   int fp;
   int err;
 
-  ospfb_t ospfb;
   virtual axis #(.WIDTH(2*WIDTH)) slv; // view into the data source interface
 
   int errors;
   int x_errs;
   int gidx;
   logic signed [WIDTH-1:0] gval;
+  logic signed [WIDTH-1:0] fir_out_re;
+  logic signed [WIDTH-1:0] fir_out_im;
   logic signed [WIDTH-1:0] pc_out_re;
   logic signed [WIDTH-1:0] pc_out_im;
 
@@ -224,8 +152,6 @@ initial begin
   --nread; // subtract off the last increment
   $fclose(fp);
     
-  ospfb = new(pe_h); //, DUT.phasecomp_inst.probe.monitor);
-  //ospfb.pc_monitor = DUT.phasecomp_inst.probe.monitor;
   slv = DUT.s_axis_ospfb;
   errors = 0;
   gidx = 0;
@@ -244,9 +170,9 @@ initial begin
   for (int i=0; i < nread; i++) begin // 10*FFT_LEN+1; i++) begin
     wait_dsp_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
-    //$display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
-    //ospfb.monitor();
     gval = out_golden[gidx++];
+    fir_out_re = (DUT.ospfb_inst.m_axis_fir_re.tready & DUT.ospfb_inst.m_axis_fir_re.tvalid) ? DUT.ospfb_inst.m_axis_fir_re.tdata : '0;
+    fir_out_im = (DUT.ospfb_inst.m_axis_fir_im.tready & DUT.ospfb_inst.m_axis_fir_im.tvalid) ? DUT.ospfb_inst.m_axis_fir_im.tdata : '0;
     pc_out_re = DUT.ospfb_inst.sout_re;
     pc_out_im = DUT.ospfb_inst.sout_im;
 

@@ -1,11 +1,4 @@
-`timescale 1ns/1ps
-`default_nettype none
-
-module xpm_delaybuf #(
-  parameter int WIDTH=16,
-  parameter int FIFO_DEPTH=64,
-  parameter int TUSER_WIDTH=1
-  
+parameter MEM_TYPE="auto"
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -14,15 +7,13 @@ module xpm_delaybuf #(
   input wire logic s_axis_tuser,
 
   axis.MST m_axis,
-  output logic m_axis_tuser,
-
-  output logic [$clog2(FIFO_DEPTH)-1:0] rd_data_count,
-  output logic [$clog2(FIFO_DEPTH)-1:0] wr_data_count
+  output logic m_axis_tuser
 );
 
 axis #(.WIDTH(WIDTH)) s_axis_delaybuf(), m_axis_delaybuf();
 logic s_axis_delaybuf_tuser, m_axis_delaybuf_tuser;
 
+logic [$clog2(FIFO_DEPTH):0] rd_data_count, wr_data_count;
 logic almost_full;
 
 typedef enum logic [1:0] {WAIT_START, WAIT_FILLED, FILLED, ERR='X} delaybuf_state_t;
@@ -35,17 +26,17 @@ logic new_sample;
 always_comb begin
   ns = ERR;
   // module m_axis bus
-  m_axis.tdata = 32'hda7a_f1f0; // data_fifo - garbage
+  m_axis.tdata = '0;//32'hda7a_f1f0; // data_fifo - garbage
   m_axis.tvalid = 1'b0;
   m_axis_tuser = 1'b0;
 
-  // module s_axis bus
-  s_axis.tready = 1'b0;
+  // module s_axis bus to delaybuf fifo
+  s_axis.tready = s_axis_delaybuf.tready;
+  new_sample = (s_axis.tready & s_axis.tvalid);
 
-  // s_axis bus to delaybuf fifo
-  s_axis_delaybuf.tvalid = 1'b0;
-  s_axis_delaybuf.tdata = 32'hdeadbeef;
-  s_axis_delaybuf_tuser = 1'b0;
+  s_axis_delaybuf.tvalid = s_axis.tvalid;
+  s_axis_delaybuf.tdata = new_sample ? s_axis.tdata : '0;//32'hf1f0_da7a;
+  s_axis_delaybuf_tuser = new_sample ? s_axis_tuser : 1'bx;
 
   // m_axis bus to delaybuf fifo
   m_axis_delaybuf.tready = 1'b0;
@@ -54,30 +45,17 @@ always_comb begin
     ns = WAIT_START;
   end else begin
     case (cs)
-      // do not accept data until upstream indicates ready and it is assumed that the
-      // slave will wait to fill the fifo up (i think this is what is in AMBA standard)
+      // do not accept data until upstream indicates ready and it is assumed that the slave will
+      // wait to fill the fifo up (I AMBA standard says upstream has to wait after asserted)
       WAIT_START: begin
-        if (s_axis_delaybuf.tready & m_axis.tready) begin
+        if (s_axis_delaybuf.tready & m_axis.tready)
           ns = WAIT_FILLED;
-          s_axis.tready = s_axis_delaybuf.tready;
-          new_sample = (s_axis.tready & s_axis.tvalid);
-
-          s_axis_delaybuf.tvalid = s_axis.tvalid;
-          s_axis_delaybuf.tdata = new_sample ? s_axis.tdata : 32'hdeadbeef;
-          s_axis_delaybuf_tuser = new_sample ? s_axis_tuser : 1'bx;
-        end else begin
+        else
           ns = WAIT_START;
-        end
       end
       // when the upstream is ready begin to accept data
       WAIT_FILLED: begin
-        s_axis.tready = s_axis_delaybuf.tready;
-        new_sample = (s_axis.tready & s_axis.tvalid);
-
-        s_axis_delaybuf.tvalid = s_axis.tvalid;
-        s_axis_delaybuf.tdata = new_sample ? s_axis.tdata : 32'hdeadbeef;
-        s_axis_delaybuf_tuser = new_sample ? s_axis_tuser : 1'bx;
-        if (almost_full) begin
+        if (rd_data_count == FIFO_DEPTH-1) begin
           ns = FILLED;
           m_axis_delaybuf.tready = m_axis.tready;
           m_axis.tvalid = m_axis_delaybuf.tvalid;
@@ -90,18 +68,10 @@ always_comb begin
 
       FILLED: begin
         ns = FILLED;
-        s_axis.tready = s_axis_delaybuf.tready;
-        new_sample = (s_axis.tready & s_axis.tvalid);
-
-        s_axis_delaybuf.tvalid = s_axis.tvalid;
-        s_axis_delaybuf.tdata = new_sample ? s_axis.tdata : 32'hdeadbeef;
-        s_axis_delaybuf_tuser = new_sample ? s_axis_tuser : 1'bx;
-
         m_axis_delaybuf.tready = m_axis.tready;
         m_axis.tvalid = m_axis_delaybuf.tvalid;
         m_axis.tdata = m_axis_delaybuf.tdata;
         m_axis_tuser = m_axis_delaybuf_tuser;
-    
       end
     endcase
   end
@@ -110,13 +80,13 @@ end
 xpm_fifo_axis #(
   .CLOCKING_MODE("common_clock"),
   .FIFO_DEPTH(FIFO_DEPTH),
-  .FIFO_MEMORY_TYPE("auto"),
-  .RD_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)),
+  .FIFO_MEMORY_TYPE(MEM_TYPE),
+  .RD_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)+1),
   .SIM_ASSERT_CHK(0),
   .TDATA_WIDTH(WIDTH),
   .TUSER_WIDTH(TUSER_WIDTH),
   .USE_ADV_FEATURES("140C"),
-  .WR_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH))
+  .WR_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)+1)
 ) delaybuf (
   .almost_full_axis(almost_full),
   .m_axis_tdata(m_axis_delaybuf.tdata),
@@ -156,8 +126,6 @@ logic clk, rst;
 axis #(.WIDTH(WIDTH)) m_axis(), s_axis();
 logic m_axis_tuser, s_axis_tuser;
 
-logic [$clog2(FIFO_DEPTH)-1:0] rd_data_count, wr_data_count;
-
 src_ctr #(
   .WIDTH(WIDTH),
   .MAX_CNT(FFT_LEN),
@@ -178,9 +146,7 @@ xpm_delaybuf #(
   .s_axis(s_axis),
   .s_axis_tuser(s_axis_tuser),
   .m_axis(m_axis),
-  .m_axis_tuser(m_axis_tuser),
-  .rd_data_count(rd_data_count),
-  .wr_data_count(wr_data_count)
+  .m_axis_tuser(m_axis_tuser)
 );
 
 task wait_cycles(int cycles=1);
@@ -193,7 +159,7 @@ initial begin
 clk <= 0; simcycles = 0;
   forever #(PERIOD/2) begin
     clk = ~clk;
-    simcycles += (1 & clk) & s_axis.tready;
+    simcycles += (1 & clk) & (~rst & s_axis.tready);
   end
 end
 
@@ -210,7 +176,7 @@ initial begin
 
   $display("Cycle=%4d: Finished init...", simcycles);
   // no output should come waiting for the fifo to fill
-  for (int i=0; i<FFT_LEN+1; i++) begin
+  for (int i=0; i<FFT_LEN; i++) begin
     wait_cycles();
     dout = (m_axis.tready & m_axis.tvalid) ? m_axis.tdata : '0;
     if (dout != expected | dout === 'x) begin
@@ -241,4 +207,4 @@ end
 
 
 endmodule
-  
+

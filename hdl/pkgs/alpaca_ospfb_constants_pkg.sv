@@ -32,17 +32,19 @@ parameter ADC_BITS = 8;          // simulation ADC effective bit resolution
 parameter WIDTH = 16;            // axi-sample word width, ADC samples padded to this width
 parameter COEFF_WID = 16;        // filter coefficient word width
 
-parameter int FFT_CONF_WID = 8; // fft configuration width (set inverse xform and scale schedule
+parameter int FFT_CONF_WID = 16; // fft configuration width (set inverse xform and scale schedule
 parameter int FFT_STAT_WID = 8;  // fft status width (overflow and optional Xk index)
 
 // TODO: FFT_LEN-DEC_FAC an issue here because need to build out the correct length
 parameter SRLEN = 4;
 
 // testing smaller modules (DelayBuf, SRLShiftReg, set DEPTH=FFT_LEN)
-parameter int  FFT_LEN = 64;                    // (M)   polyphase branches
+parameter int  FFT_LEN = 2048;                  // (M)   polyphase branches
 parameter real OSRATIO = 3.0/4.0;               // (M/D) oversampling ratio
 parameter int  DEC_FAC = FFT_LEN*OSRATIO;       // (D)   decimation factor
-parameter PTAPS = 4;                            // (P)   polyphase taps corresponds to number of PEs
+parameter int PTAPS = 8;                        // (P)   polyphase taps corresponds to number of PEs
+
+parameter string BASE_COEF_FILE = $psprintf("coeff/hann/h%%0d_%0d_%0d_4.coeff", FFT_LEN, PTAPS);
 
 // determine ADC clk period given the DSP clk
 parameter real ADC_PERIOD = 12;                 // ADC simulation clock period
