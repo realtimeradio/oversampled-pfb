@@ -1,4 +1,11 @@
-parameter MEM_TYPE="auto"
+`timescale 1ns/1ps
+`default_nettype none
+
+module xpm_delaybuf #(
+  parameter WIDTH=16,
+  parameter FIFO_DEPTH=64,
+  parameter TUSER_WIDTH=1,
+  parameter MEM_TYPE="auto"
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -10,10 +17,11 @@ parameter MEM_TYPE="auto"
   output logic m_axis_tuser
 );
 
-axis #(.WIDTH(WIDTH)) s_axis_delaybuf(), m_axis_delaybuf();
+axis #(.WIDTH(WIDTH)) s_axis_delaybuf();
+axis #(.WIDTH(WIDTH)) m_axis_delaybuf();
 logic s_axis_delaybuf_tuser, m_axis_delaybuf_tuser;
 
-logic [$clog2(FIFO_DEPTH):0] rd_data_count, wr_data_count;
+logic [$clog2(FIFO_DEPTH):0] rd_data_count;
 logic almost_full;
 
 typedef enum logic [1:0] {WAIT_START, WAIT_FILLED, FILLED, ERR='X} delaybuf_state_t;
@@ -88,123 +96,49 @@ xpm_fifo_axis #(
   .USE_ADV_FEATURES("140C"),
   .WR_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)+1)
 ) delaybuf (
+  // TODO: hopefully ports are removed in synthesis if not connected or driven
+  .almost_empty_axis(),
   .almost_full_axis(almost_full),
+
+  .dbiterr_axis(),
+
   .m_axis_tdata(m_axis_delaybuf.tdata),
-  .m_axis_tlast(),                      // TODO: hopefully removed in synthesis not driven
+  .m_axis_tdest(),
+  .m_axis_tid(),
+  .m_axis_tkeep(),
+  .m_axis_tlast(),
+  .m_axis_tstrb(),
   .m_axis_tuser(m_axis_delaybuf_tuser), // vout
   .m_axis_tvalid(m_axis_delaybuf.tvalid),
+
+  .prog_empty_axis(),
+  .prog_full_axis(),
+
   .rd_data_count_axis(rd_data_count),
+
   .s_axis_tready(s_axis_delaybuf.tready),
-  .wr_data_count_axis(wr_data_count),
+
+  .sbiterr_axis(),
+
+  .wr_data_count_axis(),
+
+  .injectdbiterr_axis(1'b0),
+  .injectsbiterr_axis(1'b0),
+
   .m_aclk(clk),
   .m_axis_tready(m_axis_delaybuf.tready),
+
   .s_aclk(clk),
   .s_aresetn(~rst),
+
   .s_axis_tdata(s_axis_delaybuf.tdata),
-  .s_axis_tlast(1'b0),                  // hoepfully removed in synthesis
+  .s_axis_tdest('0),
+  .s_axis_tid('0),
+  .s_axis_tkeep('0),
+  .s_axis_tlast(1'b0),
+  .s_axis_tstrb('0),
   .s_axis_tuser(s_axis_delaybuf_tuser), // vin
   .s_axis_tvalid(s_axis_delaybuf.tvalid)
 );
 
 endmodule
-/*
-
-*/
-
-import alpaca_ospfb_constants_pkg::*;
-parameter int PERIOD = 10;
-parameter int WIDTH = 16;
-parameter int FFT_LEN=16;
-parameter int DEC_FAC=12;
-
-parameter int FIFO_DEPTH=FFT_LEN;
-parameter int TUSER_WIDTH=1;
-
-module xpm_delaybuf_test();
-
-logic clk, rst;
-axis #(.WIDTH(WIDTH)) m_axis(), s_axis();
-logic m_axis_tuser, s_axis_tuser;
-
-src_ctr #(
-  .WIDTH(WIDTH),
-  .MAX_CNT(FFT_LEN),
-  .ORDER("natural")
-) src (
-  .clk(clk),
-  .rst(rst),
-  .m_axis(s_axis)
-);
-
-xpm_delaybuf #(
-  .WIDTH(WIDTH),
-  .FIFO_DEPTH(FIFO_DEPTH),
-  .TUSER_WIDTH(TUSER_WIDTH)
-) DUT (
-  .clk(clk),
-  .rst(rst),
-  .s_axis(s_axis),
-  .s_axis_tuser(s_axis_tuser),
-  .m_axis(m_axis),
-  .m_axis_tuser(m_axis_tuser)
-);
-
-task wait_cycles(int cycles=1);
-  repeat(cycles)
-    @(posedge clk);
-endtask
-
-int simcycles;
-initial begin
-clk <= 0; simcycles = 0;
-  forever #(PERIOD/2) begin
-    clk = ~clk;
-    simcycles += (1 & clk) & (~rst & s_axis.tready);
-  end
-end
-
-initial begin
-  logic [WIDTH-1:0] expected;
-  logic [WIDTH-1:0] dout;
-  int errors;
-  rst <= 1; expected <= '0;
-  wait_cycles(20);
-  @(posedge clk);
-  @(negedge clk); rst = 1'b0; m_axis.tready = 1'b1; s_axis_tuser = 1'b1;
-
-  @(posedge s_axis.tready);
-
-  $display("Cycle=%4d: Finished init...", simcycles);
-  // no output should come waiting for the fifo to fill
-  for (int i=0; i<FFT_LEN; i++) begin
-    wait_cycles();
-    dout = (m_axis.tready & m_axis.tvalid) ? m_axis.tdata : '0;
-    if (dout != expected | dout === 'x) begin
-      errors++;
-      $display("%sT=%4d: {expected: 0x%0X, observed: 0x%0X}%s", RED, simcycles, expected, dout, RST);
-    end else begin
-      $display("%sT=%4d: {expected: 0x%0X, observed: 0x%0X}%s", GRN, simcycles, expected, dout, RST);
-    end
-  end
-
-  // start checking output
-  $display("Waited length of FIFO...");
-  for (int i=0; i<2*FFT_LEN; i++) begin
-    wait_cycles();
-    dout = (m_axis.tready & m_axis.tvalid) ? m_axis.tdata : '0;
-    if (dout != expected | dout === 'x) begin
-      errors++;
-      $display("%sT=%4d: {expected: 0x%0X, observed: 0x%0X}%s", RED, simcycles, expected, dout, RST);
-    end else begin
-      $display("%sT=%4d: {expected: 0x%0X, observed: 0x%0X}%s", GRN, simcycles, expected, dout, RST);
-    end
-    expected++;
-  end
-
-  $display("*** Simulation complete: Errors=%4d ***", errors);
-  $finish;
-end
-
-
-endmodule
-

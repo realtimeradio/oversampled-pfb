@@ -48,7 +48,7 @@ assign axis_pe_sum[PTAPS].tready = m_axis.tready;
 genvar ii;
 generate
   for (ii=0; ii < PTAPS; ii++) begin : gen_pe
-    localparam coef_file = "/home/mcb/git/alpaca/oversampled-pfb/hdl/sim/tb/coeff/hann/h0_2048_8_4.coeff";
+    localparam coef_file = $psprintf(BASE_COEF_FILE, ii);
     xpm_pe #(
       .WIDTH(WIDTH),
       .COEFF_WID(COEFF_WID),

@@ -10,7 +10,7 @@ parameter LOOP_NUM = (FFT_LEN-DEC_FAC)/SRLEN - 1;
 parameter DATA_NUM = 2*DEPTH/SRLEN-1;
 
 // impulse parameters
-parameter int IMPULSE_PHASE = DEC_FAC-1;
+parameter int IMPULSE_PHASE = DEC_FAC;
 parameter int PULSE_VAL = FFT_LEN*FFT_LEN; //scaling schedule at 1/N
 
 // TODO: need to figure out how to indicate to axis vip it should start capturing
@@ -21,8 +21,6 @@ parameter int SAMP = FRAMES*FFT_LEN;
 parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
-
-parameter string BASE_COEF_FILE = "coeff/ones/h%0d_unit_16.coeff";
 
 module xpm_impulse_ospfb_tb();
 

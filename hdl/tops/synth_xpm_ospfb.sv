@@ -1,13 +1,15 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-// TODO: ok to import all of constants now?
 import alpaca_ospfb_constants_pkg::WIDTH;
 import alpaca_ospfb_constants_pkg::COEFF_WID;
 import alpaca_ospfb_constants_pkg::FFT_LEN;
 import alpaca_ospfb_constants_pkg::DEC_FAC;
 import alpaca_ospfb_constants_pkg::PTAPS;
 import alpaca_ospfb_constants_pkg::SRLEN;
+
+import alpaca_ospfb_constants_pkg::BASE_COEF_FILE;
+import alpaca_ospfb_constants_pkg::FFT_CONF_WID;
 
 module synth_xpm_ospfb #(
   parameter int WIDTH=16,
@@ -141,12 +143,16 @@ xpm_fifo_axis #(
 xpm_ospfb #(
   .WIDTH(WIDTH), // not 2*WIDTH because internal the OSPFB does that
   .COEFF_WID(COEFF_WID),
+  .BASE_COEF_FILE(BASE_COEF_FILE),
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN),
-  .CONF_WID(CONF_WID)
+  .LOOPBUF_MEM_TYPE("auto"),
+  .DATABUF_MEM_TYPE("auto"),
+  .SUMBUF_MEM_TYPE("auto"),
+  .CONF_WID(FFT_CONF_WID)
 ) ospfb_inst (
   .clk(clkb),
   .rst(rst),

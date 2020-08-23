@@ -8,26 +8,6 @@ parameter string GRN = "\033\[0;32m";
 parameter string MGT = "\033\[0;35m";
 parameter string RST = "\033\[0m";
 
-/*
-  TODO: implement correct arithmetic
-  The current hardware does not correctly compute arithmetic, rounding and scaling (shifting)
-  and so using full ALPACA specs (specifically 15/16 bit coefficients, 12 bit ADC) then keeping the
-  data width of the delay buffers at 16 causes overflow and the hardware simulation suffers from
-  overflow and truncation issues.
-
-  To an extent those issues can be shown here as the python ospfb can accept different data types.
-  The python simulator does not do scaling and shifting but when you do SIM_DT=int32, COEFF_WID=15,
-  ADC_BITS=12 and run the small PFB (M=64, D=48, P=4) you see how the PFB filter ramp up exhibits the
-  same shallow, and notch behavior of the Hann window until it becomes the steep narrow cliff. Showing
-  that it was the hardware was never able to pass the ramp up and was shallow due to bit growth
-  and truncation.
-
-  But since the python and hardware simulations accept parameterized using ADC_BITS=8 and
-  COEFF_WID=4 with P=4 the entire filter growth (since the FFT is float) can fit in WIDTH=16. You see
-  a little more quantization noise in the floor of the spectrum from the coefficients but the 4 bit
-  coefficients still results in a decent (no truncation/quantization effects) spectrum.
-  Comparing this to the python simulator the outputs are similar.
-*/
 parameter ADC_BITS = 8;          // simulation ADC effective bit resolution
 parameter WIDTH = 16;            // axi-sample word width, ADC samples padded to this width
 parameter COEFF_WID = 16;        // filter coefficient word width
@@ -44,7 +24,9 @@ parameter real OSRATIO = 3.0/4.0;               // (M/D) oversampling ratio
 parameter int  DEC_FAC = FFT_LEN*OSRATIO;       // (D)   decimation factor
 parameter int PTAPS = 8;                        // (P)   polyphase taps corresponds to number of PEs
 
-parameter string BASE_COEF_FILE = $psprintf("coeff/hann/h%%0d_%0d_%0d_4.coeff", FFT_LEN, PTAPS);
+//parameter BASE_COEF_FILE = "h_2048_8_4_";
+parameter BASE_COEF_FILE = $psprintf("coeff/hann/h_%0d_%0d_4_%%0d.coeff", FFT_LEN, PTAPS);
+//parameter BASE_COEF_FILE = "coeff/ones/h%0d_unit_16.coeff";
 
 // determine ADC clk period given the DSP clk
 parameter real ADC_PERIOD = 12;                 // ADC simulation clock period

@@ -1,6 +1,6 @@
 import alpaca_ospfb_constants_pkg::*;
 
-interface axis #(WIDTH) ();
+interface axis #(parameter WIDTH) ();
   logic [WIDTH-1:0] tdata;
   logic tvalid, tready;
 
