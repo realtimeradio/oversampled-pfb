@@ -44,7 +44,7 @@ logic incShift;   // asserted in fsm logic
 
 logic [$clog2(DEPTH/2)-1:0] tmp_rAddr;
 
-parameter logic [$clog2(DEPTH/2):0] modinc = DEPTH/2-DEC_FAC;
+localparam logic [$clog2(DEPTH/2):0] modinc = DEPTH/2-DEC_FAC;
 
 // simple dual-port RAM inference
 always_ff @(posedge clk)

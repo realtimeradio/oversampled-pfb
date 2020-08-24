@@ -10,7 +10,7 @@ import alpaca_ospfb_constants_pkg::SRLEN;
 
 import alpaca_ospfb_constants_pkg::FFT_CONF_WID;
 
-import alpaca_ospfb_coeff_pkg::TAPS;
+import alpaca_ospfb_ones_2048_8_coeff_pkg::TAPS;
 
 module synth_xpm_ospfb #(
   parameter int WIDTH=16,
@@ -59,13 +59,18 @@ module synth_xpm_ospfb #(
 
 );
 
-axis #(.WIDTH(2*WIDTH)) m_axis_data(), m_axis_fft_status(), s_axis_ospfb();
+axis #(.WIDTH(2*WIDTH)) m_axis_data(), s_axis_ospfb();
+axis #(.WIDTH(8)) m_axis_fft_status();
 logic s_axis_ospfb_tlast;
 
 // wire interface out of ospfb to top-level output m_axis port
 assign m_axis_tdata = m_axis_data.tdata;
 assign m_axis_tvalid = m_axis_data.tvalid;
 assign m_axis_data.tready = m_axis_tready;
+
+assign m_axis_fft_status_tdata = m_axis_fft_status.tdata;
+assign m_axis_fft_status_tvalid = m_axis_fft_status.tvalid;
+assign m_axis_fft_status.tready = 1'b0;// pipelined/streaming in real-time mode has no ready
 
 xpm_fifo_axis #(
    .CDC_SYNC_STAGES(2),
@@ -93,52 +98,49 @@ xpm_fifo_axis #(
    .USE_ADV_FEATURES("1E0E"),
    .WR_DATA_COUNT_WIDTH(DATA_COUNT_WIDTH)
 ) xpm_fifo_axis_inst (
-   .almost_empty_axis(almost_empty), // 1-bit output: Almost Empty : When asserted, this signal
-                                     // indicates that only one more read can be
-                                     // performed before the FIFO goes to empty.
+  // TODO: hopefully ports are removed in synthesis if not connected or driven
+  .almost_empty_axis(almost_empty),
+  .almost_full_axis(almost_full),
 
-   .almost_full_axis(almost_full),   // 1-bit output: Almost Full: When asserted, this signal
-                                     // indicates that only one more write can be
-                                     // performed before the FIFO is full.
+  .dbiterr_axis(),
 
-   .m_axis_tdata(s_axis_ospfb.tdata),
-   .m_axis_tlast(s_axis_ospfb_tlast),
-   .m_axis_tvalid(s_axis_ospfb.tvalid),
+  .m_axis_tdata(s_axis_ospfb.tdata),
+  .m_axis_tdest(),
+  .m_axis_tid(),
+  .m_axis_tkeep(),
+  .m_axis_tlast(s_axis_ospfb_tlast),
+  .m_axis_tstrb(),
+  .m_axis_tuser(),
+  .m_axis_tvalid(s_axis_ospfb.tvalid),
 
-   .prog_empty_axis(prog_empty),   // 1-bit output: Programmable Empty- This signal is asserted
-                                   // when the number of words in the FIFO is less than
-                                   // or equal to the programmable empty threshold
-                                   // value. It is de-asserted when the number of words
-                                   // in the FIFO exceeds the programmable empty
-                                   // threshold value.
+  .prog_empty_axis(prog_empty),
+  .prog_full_axis(prog_full),
 
-   .prog_full_axis(prog_full),     // 1-bit output: Programmable Full: This signal is asserted when
-                                   // the number of words in the FIFO is greater than
-                                   // or equal to the programmable full threshold
-                                   // value. It is de-asserted when the number of words
-                                   // in the FIFO is less than the programmable full
-                                   // threshold value.
+  .rd_data_count_axis(rd_count),
 
-   .rd_data_count_axis(rd_count),  // RD_DATA_COUNT_WIDTH-bit output: Read Data Count- This bus
-                                   // indicates the number of words available for reading in the FIFO.
+  .s_axis_tready(s_axis_tready),
 
-   .s_axis_tready(s_axis_tready),
+  .sbiterr_axis(),
 
-   .wr_data_count_axis(wr_count),  // WR_DATA_COUNT_WIDTH-bit output: Write Data Count: This bus
-                                   // indicates the number of words written into the
-                                   // FIFO.
+  .wr_data_count_axis(wr_count),
 
-   .m_aclk(clkb),
+  .injectdbiterr_axis(1'b0),
+  .injectsbiterr_axis(1'b0),
 
-   .m_axis_tready(s_axis_ospfb.tready),
+  .m_aclk(clkb),
+  .m_axis_tready(s_axis_ospfb.tready),
 
-   .s_aclk(clka),
+  .s_aclk(clka),
+  .s_aresetn(~rst),
 
-   .s_aresetn(~rst),
-
-   .s_axis_tdata(s_axis_tdata),
-   .s_axis_tlast(s_axis_tlast),
-   .s_axis_tvalid(s_axis_tvalid)
+  .s_axis_tdata(s_axis_tdata),
+  .s_axis_tdest('0),
+  .s_axis_tid('0),
+  .s_axis_tkeep('0),
+  .s_axis_tlast(s_axis_tlast),
+  .s_axis_tstrb('0),
+  .s_axis_tuser('0),
+  .s_axis_tvalid(s_axis_tvalid)
 );
 
 xpm_ospfb #(

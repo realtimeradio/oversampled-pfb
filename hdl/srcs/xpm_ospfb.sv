@@ -164,28 +164,55 @@ PhaseComp #(
 logic xfft_delay_fifo_tready;
 xpm_fifo_axis #(
   .CLOCKING_MODE("common_clock"),
-  .FIFO_DEPTH(16),// In simulation shown we only need two because of FFT slave wait state at beginning
+  .FIFO_DEPTH(16),//simulation shown we only need two because of FFT slave wait state at beginning
   .FIFO_MEMORY_TYPE("auto"),
   .SIM_ASSERT_CHK(0),
   .TDATA_WIDTH(2*WIDTH)
 ) xfft_delay_fifo_inst (
+  // TODO: hopefully ports are removed in synthesis if not connected or driven
+  .almost_empty_axis(),
+  .almost_full_axis(),
+
+  .dbiterr_axis(),
+
   .m_axis_tdata(s_axis_fft_data.tdata),
+  .m_axis_tdest(),
+  .m_axis_tid(),
+  .m_axis_tkeep(),
   .m_axis_tlast(s_axis_fft_data_tlast),
+  .m_axis_tstrb(),
+  .m_axis_tuser(),
   .m_axis_tvalid(s_axis_fft_data.tvalid),
+
+  .prog_empty_axis(),
+  .prog_full_axis(),
+
+  .rd_data_count_axis(),
+
   .s_axis_tready(xfft_delay_fifo_tready),
 
-  .m_aclk(clk),
+  .sbiterr_axis(),
 
+  .wr_data_count_axis(),
+
+  .injectdbiterr_axis(1'b0),
+  .injectsbiterr_axis(1'b0),
+
+  .m_aclk(clk),
   .m_axis_tready(s_axis_fft_data.tready),
 
   .s_aclk(clk),
-
   .s_aresetn(aresetn),
 
   // TODO: this concatenation and ~ of a signal is easy in simulation but I am not sure of the
   // implementation cause and could cause timing problems that may suggest to pipeline
   .s_axis_tdata({sout_im, sout_re}),
+  .s_axis_tdest('0),
+  .s_axis_tid('0),
+  .s_axis_tkeep('0),
   .s_axis_tlast(1'b0),
+  .s_axis_tstrb('0),
+  .s_axis_tuser('0), // vin
   .s_axis_tvalid(~hold_rst) // idea being we come out of hold_rst and the ospfb is streaming
 );
 
