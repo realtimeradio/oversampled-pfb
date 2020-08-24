@@ -4,11 +4,11 @@
 module xpm_ospfb #(
   parameter WIDTH=16,
   parameter COEFF_WID=16,
-  parameter BASE_COEF_FILE="",
   parameter FFT_LEN=32,
   parameter DEC_FAC=24,
   parameter SRT_PHA=23,  // (DEC_FAC-1) modtimer decimation phase start (which port delivered first)
   parameter PTAPS=8,
+  parameter logic signed [COEFF_WID-1:0] TAPS [PTAPS*FFT_LEN],
   parameter SRLEN=8,
   parameter LOOPBUF_MEM_TYPE="auto",
   parameter DATABUF_MEM_TYPE="auto",
@@ -105,10 +105,10 @@ xpm_datapath #(
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
-  .BASE_COEF_FILE(BASE_COEF_FILE),
   .LOOPBUF_MEM_TYPE(LOOPBUF_MEM_TYPE),
   .DATABUF_MEM_TYPE(DATABUF_MEM_TYPE),
-  .SUMBUF_MEM_TYPE(SUMBUF_MEM_TYPE)
+  .SUMBUF_MEM_TYPE(SUMBUF_MEM_TYPE),
+  .TAPS(TAPS)
 ) fir_re (
   .clk(clk),
   .rst(rst),
@@ -135,10 +135,10 @@ xpm_datapath #(
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
-  .BASE_COEF_FILE(BASE_COEF_FILE),
   .LOOPBUF_MEM_TYPE(LOOPBUF_MEM_TYPE),
   .DATABUF_MEM_TYPE(DATABUF_MEM_TYPE),
-  .SUMBUF_MEM_TYPE(SUMBUF_MEM_TYPE)
+  .SUMBUF_MEM_TYPE(SUMBUF_MEM_TYPE),
+  .TAPS(TAPS)
 ) fir_im (
   .clk(clk),
   .rst(rst),

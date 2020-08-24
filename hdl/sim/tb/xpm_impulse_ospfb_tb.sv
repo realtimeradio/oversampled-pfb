@@ -3,6 +3,7 @@
 
 import alpaca_ospfb_monitor_pkg::*;
 import alpaca_ospfb_constants_pkg::*;
+import alpaca_ospfb_ones_2048_8_coeff_pkg::*;
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;
@@ -45,13 +46,13 @@ xpm_ospfb_impulse_top #(
   .FFT_LEN(FFT_LEN),
   .SAMP(SAMP),
   .COEFF_WID(COEFF_WID),
-  .BASE_COEF_FILE(BASE_COEF_FILE),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .IMPULSE_PHASE(IMPULSE_PHASE),
   .PULSE_VAL(PULSE_VAL),
   .SRLEN(SRLEN),
+  .TAPS(TAPS),
   .CONF_WID(FFT_CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),

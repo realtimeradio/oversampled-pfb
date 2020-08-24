@@ -3,6 +3,7 @@
 
 import alpaca_ospfb_monitor_pkg::*;
 import alpaca_ospfb_constants_pkg::*;
+import alpaca_ospfb_ramp_2048_8_coeff_pkg::*;
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;
@@ -14,8 +15,6 @@ parameter int SAMP = 64;
 parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
-
-parameter string BASE_COEF_FILE = "coeff/cycramp/h_cycramp_upto_2048.coeff";
 
 module xpm_ospfb_tb();
 
@@ -40,11 +39,11 @@ xpm_ospfb_ctr_top #(
   .FFT_LEN(FFT_LEN),
   .ORDER("natural"),
   .COEFF_WID(COEFF_WID),
-  .BASE_COEF_FILE(BASE_COEF_FILE),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN),
+  .TAPS(TAPS),
   .CONF_WID(FFT_CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),

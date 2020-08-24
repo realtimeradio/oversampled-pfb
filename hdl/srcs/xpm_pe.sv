@@ -7,10 +7,10 @@ module xpm_datapath #(
   parameter int FFT_LEN=64,
   parameter int DEC_FAC=48,
   parameter int PTAPS=8,
-  parameter BASE_COEF_FILE="",
   parameter LOOPBUF_MEM_TYPE="auto",
   parameter DATABUF_MEM_TYPE="auto",
-  parameter SUMBUF_MEM_TYPE="auto"
+  parameter SUMBUF_MEM_TYPE="auto",
+  parameter logic signed [COEFF_WID-1:0] TAPS [PTAPS*FFT_LEN]
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -48,14 +48,14 @@ assign axis_pe_sum[PTAPS].tready = m_axis.tready;
 genvar ii;
 generate
   for (ii=0; ii < PTAPS; ii++) begin : gen_pe
-    localparam coef_file = $psprintf(BASE_COEF_FILE, ii);
+    localparam logic signed [COEFF_WID-1:0] taps [FFT_LEN] = TAPS[ii*FFT_LEN:(ii+1)*FFT_LEN-1];
     xpm_pe #(
       .WIDTH(WIDTH),
       .COEFF_WID(COEFF_WID),
       .FFT_LEN(FFT_LEN),
       .DEC_FAC(DEC_FAC),
       .COF_SRT(0),
-      .COEF_FILE(coef_file)
+      .TAPS(taps)
     ) pe (
       .clk(clk),
       .rst(rst),
@@ -83,10 +83,10 @@ module xpm_pe #(
   parameter FFT_LEN=64,
   parameter DEC_FAC=48,
   parameter COF_SRT=0,
-  parameter COEF_FILE="",
   parameter LOOPBUF_MEM_TYPE="auto",
   parameter DATABUF_MEM_TYPE="auto",
-  parameter SUMBUF_MEM_TYPE="auto"
+  parameter SUMBUF_MEM_TYPE="auto",
+  parameter logic signed [COEFF_WID-1:0] TAPS [FFT_LEN]
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -103,15 +103,10 @@ module xpm_pe #(
 
 localparam M_D = FFT_LEN-DEC_FAC;
 
-logic signed [(COEFF_WID-1):0] coeff_ram[FFT_LEN];
+logic signed [(COEFF_WID-1):0] coeff_ram[FFT_LEN] = TAPS;
 logic [$clog2(FFT_LEN)-1:0] coeff_ctr;
 // TODO: make note how starting phase also would be important to get right here
 logic [$clog2(FFT_LEN)-1:0] coeff_rst = COF_SRT;
-
-initial begin
-  if (COEF_FILE != "")
-    $readmemh(COEF_FILE, coeff_ram);
-end
 
 // MAC operation signals
 logic signed [WIDTH-1:0] a;          //sin + din*h TODO: verilog gotchas to extend and determine

@@ -3,6 +3,7 @@
 
 import alpaca_ospfb_monitor_pkg::*;
 import alpaca_ospfb_constants_pkg::*;
+import alpaca_ospfb_hann_2048_8_coeff_pkg::*;
 
 parameter DEPTH = FFT_LEN;
 parameter NUM = DEPTH/SRLEN - 1;
@@ -17,8 +18,6 @@ parameter int SAMP = FRAMES*FFT_LEN;
 parameter int FIFO_DEPTH = FFT_LEN/2;
 parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
 parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
-
-parameter string BASE_COEF_FILE = $psprintf("coeff/hann/h%%0d_%0d_%0d_4.coeff", FFT_LEN, PTAPS);
 
 module xpm_adc_ospfb_tb();
 
@@ -44,12 +43,12 @@ xpm_ospfb_adc_top #(
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
   .SAMP(SAMP),
-  .COEFF_WID(COEFF_WID),
   .BASE_COEF_FILE(BASE_COEF_FILE),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN),
+  .TAPS(TAPS),
   .CONF_WID(FFT_CONF_WID),
   .FIFO_DEPTH(FIFO_DEPTH),
   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),

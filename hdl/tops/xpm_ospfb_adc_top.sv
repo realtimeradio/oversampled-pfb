@@ -10,11 +10,11 @@ module xpm_ospfb_adc_top #(
   parameter int FFT_LEN=64,
   parameter int SAMP=FFT_LEN,
   parameter int COEFF_WID=16,
-  parameter string BASE_COEF_FILE="",
   parameter int DEC_FAC=48,
   parameter int SRT_PHA=DEC_FAC-1,
   parameter int PTAPS=3,
   parameter int SRLEN=4,
+  parameter logic signed [COEFF_WID-1:0] TAPS [PTAPS*FFT_LEN],
   parameter int CONF_WID=8,
   // fifo parameters
   parameter int FIFO_DEPTH=(FFT_LEN-DEC_FAC),
@@ -147,12 +147,12 @@ xpm_fifo_axis #(
 xpm_ospfb #(
   .WIDTH(WIDTH),
   .COEFF_WID(COEFF_WID),
-  .BASE_COEF_FILE(BASE_COEF_FILE),
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
   .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
   .SRLEN(SRLEN),
+  .TAPS(TAPS),
   .CONF_WID(CONF_WID)
 ) ospfb_inst (
   .clk(clkb),
