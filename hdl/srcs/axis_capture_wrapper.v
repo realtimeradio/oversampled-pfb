@@ -1,29 +1,31 @@
 
 
 module axis_capture_wrapper #(
-  parameter WIDTH=32,
+  parameter TDATA_NUM_BYTES=4,
   parameter DEPTH=65536,
   parameter BRAM_ADDR_WID=32
 ) (
   input wire clk,
   input wire rst,
 
-  input wire signed [WIDTH-1:0] s_axis_tdata,
+  input wire signed [TDATA_NUM_BYTES*8-1:0] s_axis_tdata,
   input wire s_axis_tvalid,
-  output s_axis_tready,
+  output wire s_axis_tready,
 
-  output [WIDTH-1:0] bram_wdata,        // Data In Bus (optional)
-  output [WIDTH/8-1:0] bram_we,         // Byte Enables (required w/ BRAM controller)
-  output bram_en,                       // Chip Enable Signal (optional)
+  output wire [TDATA_NUM_BYTES*8-1:0] bram_wdata,        // Data In Bus (optional)
+  output wire [TDATA_NUM_BYTES-1:0] bram_we,         // Byte Enables (required w/ BRAM controller)
+  output wire bram_en,                       // Chip Enable Signal (optional)
 
-  input wire [WIDTH-1:0] bram_rdata,    // Data Out Bus (optional)
+  input wire [TDATA_NUM_BYTES*8-1:0] bram_rdata,    // Data Out Bus (optional)
 
-  output [BRAM_ADDR_WID-1:0] bram_addr, // Address Signal (required)
-  output bram_clk,                      // Clock Signal (required)
-  output bram_rst,                      // Reset Signal (required)
+  output wire [BRAM_ADDR_WID-1:0] bram_addr, // Address Signal (required)
+  output wire bram_clk,                      // Clock Signal (required)
+  output wire bram_rst,                      // Reset Signal (required)
 
-  output full
+  output wire full
 );
+
+  localparam WIDTH = TDATA_NUM_BYTES*8;
 
   axis #(.WIDTH(WIDTH)) s_axis();
 
