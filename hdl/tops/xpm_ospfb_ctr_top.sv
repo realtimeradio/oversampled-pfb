@@ -2,25 +2,26 @@
 `default_nettype none
 
 module xpm_ospfb_ctr_top #(
+  // data width
   parameter int WIDTH=16,
+  // ospfb
   parameter int FFT_LEN=64,
-  parameter int SAMP=FFT_LEN,
-  parameter int ORDER="natural",
   parameter int COEFF_WID=16,
   parameter int DEC_FAC=48,
-  parameter int SRT_PHA=DEC_FAC-1,
-  parameter int PTAPS=3,
-  parameter int SRLEN=4,
+  parameter int PTAPS=8,
   parameter logic signed [COEFF_WID-1:0] TAPS [PTAPS*FFT_LEN],
-  parameter int CONF_WID=8,
-  // fifo parameters
-  parameter int FIFO_DEPTH=(FFT_LEN-DEC_FAC),
-  parameter int PROG_EMPTY_THRESH=FIFO_DEPTH/2,
-  parameter int PROG_FULL_THRESH=FIFO_DEPTH/2,
-  parameter int DATA_COUNT_WIDTH=$clog2(FIFO_DEPTH)
+  // fft axis config
+  parameter int FFT_CONF_WID=8,
+  parameter int FFT_USER_WID=8,
+  // source counter
+  parameter int ORDER="natural",
+  // dc fifo
+  parameter int DC_FIFO_DEPTH=32,
+  // vip capture
+  parameter int SAMP=2048
 ) (
-  input wire logic clka,
-  input wire logic clkb,
+  input wire logic s_axis_aclk, // adc clk
+  input wire logic m_axis_aclk, // dsp clk
   input wire logic rst,
   input wire logic en,
 
@@ -32,23 +33,14 @@ module xpm_ospfb_ctr_top #(
   output logic event_tlast_missing,
   output logic event_fft_overflow,
   output logic event_data_in_channel_halt,
-  // fifo signals
-  output logic almost_empty,
-  output logic almost_full,
-  output logic prog_empty,
-  output logic prog_full,
-  output logic [DATA_COUNT_WIDTH-1:0] rd_count,
-  output logic [DATA_COUNT_WIDTH-1:0] wr_count,
 
   // vip signal
   output logic vip_full
 );
 
 axis #(.WIDTH(WIDTH)) s_axis();          // counter output
-axis #(.WIDTH(2*WIDTH)) s_axis_fifo();   // replicate counter output into ospfb
-
-axis #(.WIDTH(2*WIDTH)) s_axis_ospfb();
-logic s_axis_fifo_tlast, s_axis_ospfb_tlast;
+axis #(.WIDTH(2*WIDTH)) s_axis_ospfb(); // replicate counter output into ospfb
+logic s_axis_ospfb_tlast;
 
 axis #(.WIDTH(2*WIDTH)) m_axis_data();
 logic m_axis_data_tlast;
@@ -60,99 +52,40 @@ src_ctr #(
   .MAX_CNT(FFT_LEN),
   .ORDER("natural")
 ) src_ctr_inst (
-  .clk(clka),
+  .clk(s_axis_aclk),
   .rst(rst),
   .m_axis(s_axis)
 );
 
 // replicate counter outputs
-assign s_axis_fifo.tdata = {2{s_axis.tdata}};
-assign s_axis_fifo.tvalid = s_axis.tvalid;
-assign s_axis.tready = s_axis_fifo.tready;
-
-xpm_fifo_axis #(
-   .CDC_SYNC_STAGES(2),
-   .CLOCKING_MODE("independent_clock"),
-   .ECC_MODE("no_ecc"),
-   .FIFO_DEPTH(FIFO_DEPTH),
-   .FIFO_MEMORY_TYPE("auto"),
-   .PACKET_FIFO("false"),
-   .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),
-   .PROG_FULL_THRESH(PROG_FULL_THRESH),
-   .RD_DATA_COUNT_WIDTH(DATA_COUNT_WIDTH),
-   .RELATED_CLOCKS(1),
-   .SIM_ASSERT_CHK(1),
-   .TDATA_WIDTH(2*WIDTH),
-   .TDEST_WIDTH(1),
-   .TID_WIDTH(1),
-   .TUSER_WIDTH(1),
-   .USE_ADV_FEATURES("1E0E"),
-   .WR_DATA_COUNT_WIDTH(DATA_COUNT_WIDTH)
-) xpm_fifo_axis_inst (
-  // TODO: hopefully ports are removed in synthesis if not connected or driven
-  .almost_empty_axis(almost_empty),
-  .almost_full_axis(almost_full),
-
-  .dbiterr_axis(),
-
-  .m_axis_tdata(s_axis_ospfb.tdata),
-  .m_axis_tdest(),
-  .m_axis_tid(),
-  .m_axis_tkeep(),
-  .m_axis_tlast(s_axis_ospfb_tlast),
-  .m_axis_tstrb(),
-  .m_axis_tuser(),
-  .m_axis_tvalid(s_axis_ospfb.tvalid),
-
-  .prog_empty_axis(prog_empty),
-  .prog_full_axis(prog_full),
-
-  .rd_data_count_axis(rd_count),
-
-  .s_axis_tready(s_axis_fifo.tready),
-
-  .sbiterr_axis(),
-
-  .wr_data_count_axis(wr_count),
-
-  .injectdbiterr_axis(1'b0),
-  .injectsbiterr_axis(1'b0),
-
-  .m_aclk(clkb),
-  .m_axis_tready(s_axis_ospfb.tready),
-
-  .s_aclk(clka),
-  .s_aresetn(~rst),
-
-  .s_axis_tdata(s_axis_fifo.tdata),
-  .s_axis_tdest('0),
-  .s_axis_tid('0),
-  .s_axis_tkeep('0),
-  .s_axis_tlast(s_axis_fifo_tlast),
-  .s_axis_tstrb('0),
-  .s_axis_tuser('0),
-  .s_axis_tvalid(s_axis_fifo.tvalid)
-);
+assign s_axis_ospfb.tdata = {2{s_axis.tdata}};
+assign s_axis_ospfb.tvalid = s_axis.tvalid;
+assign s_axis.tready = s_axis_ospfb.tready;
 
 xpm_ospfb #(
-  .WIDTH(WIDTH),
+  .WIDTH(WIDTH), // not 2*WIDTH because internal the OSPFB does that
   .COEFF_WID(COEFF_WID),
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
-  .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
-  .SRLEN(SRLEN),
   .TAPS(TAPS),
-  .CONF_WID(CONF_WID)
+  .LOOPBUF_MEM_TYPE("auto"),
+  .DATABUF_MEM_TYPE("auto"),
+  .SUMBUF_MEM_TYPE("auto"),
+  .FFT_CONF_WID(FFT_CONF_WID),
+  .FFT_USER_WID(FFT_USER_WID),
+  .DC_FIFO_DEPTH(DC_FIFO_DEPTH)
 ) ospfb_inst (
-  .clk(clkb),
+  .s_axis_aclk(s_axis_aclk),
+  .m_axis_aclk(m_axis_aclk),
   .rst(rst),
   .en(en),
   .s_axis(s_axis_ospfb),
-  .m_axis_fft_status(m_axis_fft_status),
+  .s_axis_tlast(s_axis_ospfb_tlast),
   .m_axis_data(m_axis_data),
   .m_axis_data_tlast(m_axis_data_tlast),
   .m_axis_data_tuser(m_axis_data_tuser),
+  .m_axis_fft_status(m_axis_fft_status),
   .event_frame_started(event_frame_started),
   .event_tlast_unexpected(event_tlast_unexpected),
   .event_tlast_missing(event_tlast_missing),
@@ -164,7 +97,7 @@ axis_vip #(
   .WIDTH(2*WIDTH),
   .DEPTH(SAMP)
 ) vip_inst (
-  .clk(clkb),
+  .clk(m_axis_aclk),
   .rst(rst),
   .s_axis(m_axis_data),
   .full(vip_full)

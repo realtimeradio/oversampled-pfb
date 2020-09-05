@@ -5,19 +5,9 @@ import alpaca_ospfb_monitor_pkg::*;
 import alpaca_ospfb_constants_pkg::*;
 import alpaca_ospfb_hann_2048_8_coeff_pkg::*;
 
-parameter DEPTH = FFT_LEN;
-parameter NUM = DEPTH/SRLEN - 1;
-parameter LOOP_NUM = (FFT_LEN-DEC_FAC)/SRLEN - 1;
-parameter DATA_NUM = 2*DEPTH/SRLEN-1;
-
-// TODO: need to figure out how to indicate to axis vip it should start capturing
+// TODO: decide if mechanisim other than valid to allow vip to start capturing
 parameter int FRAMES = 32;
 parameter int SAMP = FRAMES*FFT_LEN;
-
-// dc fifo parameters
-parameter int FIFO_DEPTH = FFT_LEN/2;
-parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
-parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
 
 module xpm_adc_ospfb_tb();
 
@@ -29,33 +19,26 @@ logic event_tlast_missing;
 logic event_fft_overflow;
 logic event_data_in_channel_halt;
 
-logic almost_empty, almost_full, prog_empty, prog_full;
-logic [$clog2(FIFO_DEPTH)-1:0] rd_count, wr_count;
-
 logic vip_full;
 
 axis #(.WIDTH(FFT_STAT_WID)) m_axis_fft_status();
 
-// adc model data source --> dual clock fifo --> xpm_ospfb --> axis vip
+// adc model data source --> dual-clock fifo --> ospfb --> axis vip
 xpm_ospfb_adc_top #(
-  .SRC_PERIOD(ADC_PERIOD),
-  .ADC_BITS(ADC_BITS),
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
-  .SAMP(SAMP),
-  .BASE_COEF_FILE(BASE_COEF_FILE),
   .DEC_FAC(DEC_FAC),
-  .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
-  .SRLEN(SRLEN),
   .TAPS(TAPS),
-  .CONF_WID(FFT_CONF_WID),
-  .FIFO_DEPTH(FIFO_DEPTH),
-  .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),
-  .PROG_FULL_THRESH(PROG_FULL_THRESH)
+  .FFT_CONF_WID(FFT_CONF_WID),
+  .FFT_USER_WID(FFT_USER_WID),
+  .SRC_PERIOD(ADC_PERIOD),
+  .ADC_BITS(ADC_BITS),
+  .DC_FIFO_DEPTH(DC_FIFO_DEPTH),
+  .SAMP(SAMP)
 ) DUT (
-  .clka(adc_clk),
-  .clkb(dsp_clk),
+  .s_axis_aclk(adc_clk),
+  .m_axis_aclk(dsp_clk),
   .rst(rst),
   .en(en),
   // fft signals
@@ -66,13 +49,7 @@ xpm_ospfb_adc_top #(
   .event_tlast_missing(event_tlast_missing),
   .event_fft_overflow(event_fft_overflow),
   .event_data_in_channel_halt(event_data_in_channel_halt),
-  // fifo signals
-  .almost_empty(almost_empty),
-  .almost_full(almost_full),
-  .prog_empty(prog_empty),
-  .prog_full(prog_full),
-  .rd_count(rd_count),
-  .wr_count(wr_count),
+
   // vip signal
   .vip_full(vip_full)
 );
@@ -94,7 +71,7 @@ initial begin
   dsp_clk <= 0; simcycles=0;
   forever #(DSP_PERIOD/2) begin
     dsp_clk = ~dsp_clk;
-    simcycles += (1 & dsp_clk) & ~DUT.ospfb_inst.hold_rst;//~rst;
+    simcycles += (1 & dsp_clk) & ~DUT.ospfb_inst.datapath_inst.hold_rst;//~rst;
   end
 end
 
@@ -117,7 +94,7 @@ initial begin
   int errors;
   virtual axis #(.WIDTH(2*WIDTH)) slv; // view into the data source interface
 
-  slv = DUT.s_axis_ospfb;
+  slv = DUT.ospfb_inst.s_axis_ospfb;
   errors = 0;
 
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);

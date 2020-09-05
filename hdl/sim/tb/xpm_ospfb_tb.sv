@@ -5,16 +5,7 @@ import alpaca_ospfb_monitor_pkg::*;
 import alpaca_ospfb_constants_pkg::*;
 import alpaca_ospfb_ramp_2048_8_coeff_pkg::*;
 
-parameter DEPTH = FFT_LEN;
-parameter NUM = DEPTH/SRLEN - 1;
-parameter LOOP_NUM = (FFT_LEN-DEC_FAC)/SRLEN - 1;
-parameter DATA_NUM = 2*DEPTH/SRLEN-1;
-
 parameter int SAMP = 64;
-
-parameter int FIFO_DEPTH = FFT_LEN/2;
-parameter int PROG_EMPTY_THRESH = FIFO_DEPTH/2;
-parameter int PROG_FULL_THRESH = FIFO_DEPTH/2;
 
 module xpm_ospfb_tb();
 
@@ -26,31 +17,26 @@ logic event_tlast_missing;
 logic event_fft_overflow;
 logic event_data_in_channel_halt;
 
-logic almost_empty, almost_full, prog_empty, prog_full;
-logic [$clog2(FIFO_DEPTH)-1:0] rd_count, wr_count;
-
 logic vip_full;
 
-axis #(.WIDTH(8)) m_axis_fft_status();
+axis #(.WIDTH(FFT_STAT_WID)) m_axis_fft_status();
 
-// ctr data source --> dual clock fifo --> xpm_ospfb --> axis vip
+// ctr data source --> dual-clock fifo --> ospfb --> axis vip
 xpm_ospfb_ctr_top #(
   .WIDTH(WIDTH),
   .FFT_LEN(FFT_LEN),
-  .ORDER("natural"),
   .COEFF_WID(COEFF_WID),
   .DEC_FAC(DEC_FAC),
-  .SRT_PHA(DEC_FAC-1),
   .PTAPS(PTAPS),
-  .SRLEN(SRLEN),
   .TAPS(TAPS),
-  .CONF_WID(FFT_CONF_WID),
-  .FIFO_DEPTH(FIFO_DEPTH),
-  .PROG_EMPTY_THRESH(PROG_EMPTY_THRESH),
-  .PROG_FULL_THRESH(PROG_FULL_THRESH)
+  .FFT_CONF_WID(FFT_CONF_WID),
+  .FFT_USER_WID(FFT_USER_WID),
+  .ORDER("natural"),
+  .DC_FIFO_DEPTH(DC_FIFO_DEPTH),
+  .SAMP(SAMP)
 ) DUT (
-  .clka(adc_clk),
-  .clkb(dsp_clk),
+  .s_axis_aclk(adc_clk),
+  .m_axis_aclk(dsp_clk),
   .rst(rst),
   .en(en),
   // fft signals
@@ -61,13 +47,7 @@ xpm_ospfb_ctr_top #(
   .event_tlast_missing(event_tlast_missing),
   .event_fft_overflow(event_fft_overflow),
   .event_data_in_channel_halt(event_data_in_channel_halt),
-  // fifo signals
-  .almost_empty(almost_empty),
-  .almost_full(almost_full),
-  .prog_empty(prog_empty),
-  .prog_full(prog_full),
-  .rd_count(rd_count),
-  .wr_count(wr_count),
+
   // vip signal
   .vip_full(vip_full)
 );
@@ -89,7 +69,7 @@ initial begin
   dsp_clk <= 0; simcycles=0;
   forever #(DSP_PERIOD/2) begin
     dsp_clk = ~dsp_clk;
-    simcycles += (1 & dsp_clk) & ~DUT.ospfb_inst.hold_rst;//~rst;
+    simcycles += (1 & dsp_clk) & ~DUT.ospfb_inst.datapath_inst.hold_rst;//~rst;
   end
 end
 
@@ -151,7 +131,7 @@ initial begin
   --nread; // subtract off the last increment
   $fclose(fp);
     
-  slv = DUT.s_axis_ospfb;
+  slv = DUT.ospfb_inst.s_axis_ospfb;
   errors = 0;
   gidx = 0;
 
@@ -170,10 +150,10 @@ initial begin
     wait_dsp_cycles(1);
     //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
     gval = out_golden[gidx++];
-    fir_out_re = (DUT.ospfb_inst.m_axis_fir_re.tready & DUT.ospfb_inst.m_axis_fir_re.tvalid) ? DUT.ospfb_inst.m_axis_fir_re.tdata : '0;
-    fir_out_im = (DUT.ospfb_inst.m_axis_fir_im.tready & DUT.ospfb_inst.m_axis_fir_im.tvalid) ? DUT.ospfb_inst.m_axis_fir_im.tdata : '0;
-    pc_out_re = DUT.ospfb_inst.sout_re;
-    pc_out_im = DUT.ospfb_inst.sout_im;
+    fir_out_re = (DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tready & DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tvalid) ? DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tdata : '0;
+    fir_out_im = (DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tready & DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tvalid) ? DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tdata : '0;
+    pc_out_re = DUT.ospfb_inst.datapath_inst.sout_re;
+    pc_out_im = DUT.ospfb_inst.datapath_inst.sout_im;
 
     if (pc_out_re === 'x || pc_out_im === 'x) begin
       x_errs++;

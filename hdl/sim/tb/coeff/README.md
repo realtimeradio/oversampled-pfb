@@ -1,5 +1,8 @@
 # Temporary Coefficient Files for Test Repeatability
 
+This coefficient structure is only supported in the first version of the OSPFB
+that only used SRL shift registers for the delay chain.
+
 These coeffecients and tracked in order to repeat tests with the OSPFB
 quickly and bring it back to a known state.
 

@@ -1,7 +1,7 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-module xpm_datapath #(
+module xpm_fir #(
   parameter int WIDTH=16,
   parameter int COEFF_WID=16,
   parameter int FFT_LEN=64,
