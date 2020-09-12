@@ -51,6 +51,9 @@ module alpaca_cmpx_mult #(
   alpaca_axis.SLV x2,
 
   alpaca_axis.MST Xk
+  // mst tready not implemented, assuming downstream can accept
+  // possible error check is to create an output put and have
+  // that driven by when the mst is valid and the mst (slv) not ready
 );
 
 wk_t twiddle [FFT_LEN/2];
@@ -83,19 +86,29 @@ assign Wk = twiddle[ctr];
 // but so we may need to add more for better fclk. Also may want to add more to clock the
 // twiddle factor out.
 // cmult latency + final add/sub (may need more, see above note)
-localparam VLD_LAT = 7;
-localparam X1_LAT = VLD_LAT-1;
-logic [VLD_LAT-1:0] vld_delay;
+localparam AXIS_LAT = 7;
+localparam X1_LAT = AXIS_LAT-1;
+logic [1:0] axis_delay [AXIS_LAT-1:0]; // {tvalid, tlast}
+// not sure if this is the best way to get the user width here...
+logic [$bits(Xk.tuser)-1:0] axis_tuser_delay [AXIS_LAT-1:0]; // concatenate x1/x2 tuser as {x1,x2}
 
-always_ff @(posedge clk)
-  vld_delay <= {vld_delay[VLD_LAT-2:0], x2.tvalid};
+// opting for x2 last/valid propagation
+always_ff @(posedge clk) begin
+  axis_delay <= {axis_delay[AXIS_LAT-2:0], {x2.tvalid, x2.tlast}};
+  axis_tuser_delay <= {axis_tuser_delay[AXIS_LAT-2:0] , {x1.tuser, x2.tuser}};
+end
 
 cx_t [X1_LAT-1:0] x1_delay;
 
 always_ff @(posedge clk)
   x1_delay <= {x1_delay[X1_LAT-2:0], x1.tdata};
 
-assign Xk.tvalid = vld_delay[VLD_LAT-1];
+assign Xk.tvalid = axis_delay[AXIS_LAT-1][1];
+assign Xk.tlast = axis_delay[AXIS_LAT-1][0];
+assign Xk.tuser = axis_tuser_delay[AXIS_LAT-1];
+
+assign x1.tready = ~rst;
+assign x2.tready = ~rst;
 
 cmult #(
   .AWIDTH(WIDTH),
@@ -111,7 +124,7 @@ cmult #(
 );
 
 // the delay is showing computation one cycle later in simulation but may need
-// to do another one for dsp efficiency?
+// to do another one for dsp slice clock efficiency?
 always_ff @(posedge clk) begin
   Xkhi.re <= x1_delay[X1_LAT-1].re - WkX2.re;
   Xkhi.im <= x1_delay[X1_LAT-1].im - WkX2.im;
@@ -128,7 +141,7 @@ module cmpx_tb();
 logic clk, rst;
 
 alpaca_axis #(.dtype(cx_t), .TUSER(8)) x1(), x2();
-alpaca_axis #(.dtype(cx_pkt_t), .TUSER(8)) Xk();
+alpaca_axis #(.dtype(cx_pkt_t), .TUSER(16)) Xk();
 
 clk_generator #(.PERIOD(PERIOD)) clk_gen_inst (.*);
 
@@ -151,30 +164,27 @@ endtask
 
 initial begin
 
-  automatic string s1 = "x1: %0d+j%0d, vld: 0b%0b}, x2: %0d+j%0d, vld: 0b%0b} vld_delay: 0x%08b";
-  automatic string s2 = "{Xk[1]: %0d+j%0d, vld: 0b%0b}, Xk[0]: %0d+j%0d, vld: 0b%0b}";
+  automatic string s1 = "{x1: %0d+j%0d, tvalid: 0b%0b, tlast: 0b%0b} {x2: %0d+j%0d, tvalid: 0b%0b, tlast: 0b%0b}";
+  automatic string s2 = "{Xk[1]: %0d+j%0d}, Xk[0]: %0d+j%0d}, tvalid: 0b%0b, tlast: 0b%0b}";
   automatic string logstr = {s1, " ", s2, "\n"};
   rst <= 1;
-  x1.tdata <= '0; x1.tvalid <= 0;
-  x2.tdata <= '0; x2.tvalid <= 0;
+  x1.tdata <= '0; x1.tvalid <= 0; x1.tlast <= 0; x1.tuser <= '0;
+  x2.tdata <= '0; x2.tvalid <= 0; x2.tlast <= 0; x2.tuser <= '0;
 
   @(posedge clk);
-  @(negedge clk); rst = 0; x1.tvalid = 1; x2.tvalid = 1;
+  @(negedge clk); rst=0; x1.tvalid=1; x2.tvalid=1; x1.tuser=8'hde; x2.tuser=8'had; Xk.tready=1;
 
   for (int i=0; i < 20; i++) begin
-    $display($psprintf(logstr, x1.tdata.re, x1.tdata.im, x1.tvalid,
-                          x2.tdata.re, x2.tdata.im, x2.tvalid, DUT.vld_delay,
-                          Xk.tdata[1].re, Xk.tdata[1].im, Xk.tvalid,
-                          Xk.tdata[0].re, Xk.tdata[0].im, Xk.tvalid));
-    //$display("x1: %0d+j%0d, vld: 0b%0b}, x2: %0d+j%0d, vld: 0b%0b} vld_delay: 0x%08b",
-    //          x1.tdata.re, x1.tdata.im, x1.tvalid, x2.tdata.re, x2.tdata.im, x2.tvalid, DUT.vld_delay);
-    //$display("{Xk[1]: %0d+j%0d, vld: 0b%0b}, Xk[0]: %0d+j%0d, vld: 0b%0b}",
-    //          Xk.tdata[1].re, Xk.tdata[1].im, Xk.tvalid, Xk.tdata[0].re, Xk.tdata[0].im, Xk.tvalid);
-    //$display("");
+    $display($psprintf(logstr, x1.tdata.re, x1.tdata.im, x1.tvalid, x1.tlast,
+                          x2.tdata.re, x2.tdata.im, x2.tvalid, x2.tlast,
+                          Xk.tdata[1].re, Xk.tdata[1].im,
+                          Xk.tdata[0].re, Xk.tdata[0].im,
+                          Xk.tvalid, Xk.tlast));
     wait_cycles(1);
     @(negedge clk);
     x1.tdata.re = x1.tdata.re+1; x1.tdata.im = x1.tdata.im+1;
     x2.tdata.re = x2.tdata.re+1; x2.tdata.im = x2.tdata.im+1;
+    x2.tlast = (i%8 == 0);
   end
 
   $finish;
