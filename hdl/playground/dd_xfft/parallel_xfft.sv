@@ -17,11 +17,6 @@ typedef struct packed {
   logic signed [WIDTH-1:0] re;
 } cx_t;
 
-typedef struct packed {
-  logic signed [PHA_WID-1:0] im;
-  logic signed [PHA_WID-1:0] re;
-} cx_wk_t;
-
 typedef cx_t [SAMP_PER_CLK-1:0] cx_pkt_t;
 
 typedef sample_t [SAMP_PER_CLK-1:0] fir_t;
@@ -183,60 +178,6 @@ xfft_0 xfft_inst (
 );
 
 endmodule : sv_xfft_0_wrapper
-
-
-/******************************************
-  last stage twidle factor combination
-******************************************/
-//module alpaca_butterfly #(
-//  parameter int FFT_LEN=16,
-//  parameter int PHA_WID=23
-//) (
-//  input wire logic clk,
-//  input wire logic rst,
-//
-//  alpaca_axis.SLV x1,
-//  alpaca_axis.SLV x2,
-//
-//  alpaca_axis.MST Xk
-//);
-//
-///*
-//  TODO:
-//    - Wk counter
-//    - data width of Xlo, Xhi
-//    - AXIS protocol
-//    - these need to be complex multiplies
-//*/
-//
-//cx_wk_t Wk [FFT_LEN/2];
-//
-//initial begin
-//  $readmemh("", Wk);
-//end
-//
-//// but need to be complex
-////Xlo = X1 + Wk*X2
-////Xhi = X1 - Wk*X2
-//
-//logic signed [] Xlo, Xhi;
-//
-//always_comb begin
-//  Xlo = x1.tdata + Wk*x2.tdata;
-//end
-//
-//always_comb begin
-//  Xhi = x1.tdata - Wk*x2.tdata;
-//end
-//
-//always_ff @(posedge clk)
-//  if (rst)
-//    Xk.tdata <= '0;
-//  else
-//    Xk.tdata <= {Xhi, Xlo};
-//    
-//
-//endmodule : alpaca_butterfly
 
 /*******************************************
   Simple parallel fft from Xilinx fft's
