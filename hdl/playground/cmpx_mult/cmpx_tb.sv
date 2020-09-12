@@ -40,7 +40,7 @@ endinterface
 
 /////////////////////////////////////////////////////////////////
 
-module alpaca_cmpx_mult #(
+module alpaca_butterfly #(
   parameter int FFT_LEN=16,
   parameter int WIDTH=16,
   parameter int PHASE_WIDTH=23
@@ -134,7 +134,7 @@ end
 
 assign Xk.tdata = {Xkhi, Xklo};
 
-endmodule : alpaca_cmpx_mult
+endmodule : alpaca_butterfly
 
 module cmpx_tb();
 
@@ -145,7 +145,7 @@ alpaca_axis #(.dtype(cx_pkt_t), .TUSER(16)) Xk();
 
 clk_generator #(.PERIOD(PERIOD)) clk_gen_inst (.*);
 
-alpaca_cmpx_mult #(
+alpaca_butterfly #(
   .FFT_LEN(FFT_LEN),
   .WIDTH(WIDTH),
   .PHASE_WIDTH(PHASE_WIDTH)
