@@ -1,13 +1,38 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+/*
+  TODO:
+    * configuration for ifft
+    * scaling schedule configuration
+    * rounding/scaling on output, but could also be done in the following block
+    * run through Vivado synthesis to get resources and fmax
+      - fmax may be a function of if scaling happens or not, should ask latis,
+        but with full growth the DSP slices should only be able to allow 40 bit wide
+        without a penalty
+
+    * this uses scaled FFT, could do full growth - this theoretically would just
+      require more resource, but could impact clock and speed. Because the question
+      is what resources are required for DSPs to do the wider multiplicaiton and if
+      it can be done just as fast. I imagine not...or at least can think of reasons
+      why not, for example if it uses two dsps to chain things together then the net
+      delay from one to the other may cause it to be too slow. 
+    * this also uses natural ordered outputs... can change it to save resources
+
+    * make sure the write twiddle code is clean, that is where most my
+      errors where, especially when moving to ifft need to remove the negative
+
+    * clean up cmult files, cosolodate python files
+
+*/
+
 /*******************************
   parameters and interface
 ********************************/
 package alpaca_dtypes_pkg;
 
 parameter int WIDTH = 16;
-parameter int PHA_WID = 23;
+parameter int PHASE_WIDTH = 23;
 parameter int SAMP_PER_CLK = 2;
 
 typedef logic signed [WIDTH-1:0] sample_t;
@@ -20,6 +45,21 @@ typedef struct packed {
 typedef cx_t [SAMP_PER_CLK-1:0] cx_pkt_t;
 
 typedef sample_t [SAMP_PER_CLK-1:0] fir_t;
+
+// alpaca butterfly types
+typedef struct packed {
+  logic signed [PHASE_WIDTH-1:0] im;
+  logic signed [PHASE_WIDTH-1:0] re;
+} wk_t;
+
+// TODO: get correct width
+// but this represents the growth required from mult and 1 add
+typedef struct packed {
+  logic signed [PHASE_WIDTH+WIDTH:0] im;
+  logic signed [PHASE_WIDTH+WIDTH:0] re;
+} arith_t;
+
+typedef arith_t [SAMP_PER_CLK-1:0] arith_pkt_t;
 
 endpackage
 
@@ -183,7 +223,8 @@ endmodule : sv_xfft_0_wrapper
   Simple parallel fft from Xilinx fft's
 ********************************************/
 module parallel_xfft #(
-  parameter int TUSER=8
+  parameter int TUSER=8,
+  parameter TWIDDLE_FILE=""
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -192,11 +233,13 @@ module parallel_xfft #(
   alpaca_axis.SLV s_axis_config_x2,
   alpaca_axis.SLV s_axis_config_x1,
 
-  alpaca_axis.MST m_axis_fft_x2,
-  alpaca_axis.MST m_axis_fft_x1,
+  //alpaca_axis.MST m_axis_fft_x2,
+  //alpaca_axis.MST m_axis_fft_x1,
 
   alpaca_axis.MST m_axis_fft_status_x2,
   alpaca_axis.MST m_axis_fft_status_x1,
+
+  alpaca_axis.MST m_axis_Xk,
 
   output logic [1:0] event_frame_started,
   output logic [1:0] event_tlast_unexpected,
@@ -206,6 +249,7 @@ module parallel_xfft #(
 );
 
 alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) s_axis_fft_x2(), s_axis_fft_x1();
+alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
 
 seperate_stream ss_inst (//no clk -- combinational circuit
   .s_axis(s_axis),
@@ -251,6 +295,19 @@ sv_xfft_0_wrapper xfft_1 (
   .event_tlast_missing(event_tlast_missing[0]),
   .event_fft_overflow(event_fft_overflow[0]),
   .event_data_in_channel_halt(event_data_in_channel_halt[0])
+);
+
+alpaca_butterfly #(
+  .FFT_LEN(FFT_LEN),
+  .WIDTH(WIDTH),
+  .PHASE_WIDTH(PHASE_WIDTH),
+  .TWIDDLE_FILE(TWIDDLE_FILE)
+) butterfly_inst (
+  .clk(clk),
+  .rst(rst),
+  .x1(m_axis_fft_x1),
+  .x2(m_axis_fft_x2),
+  .Xk(m_axis_Xk)
 );
 
 endmodule : parallel_xfft
@@ -374,7 +431,8 @@ module parallel_xfft_top #(
   parameter int IMPULSE_VAL=1,
   parameter int TUSER=8,
   // capture parameters
-  parameter int FRAMES = 2
+  parameter int FRAMES = 2,
+  parameter TWIDDLE_FILE=""
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -391,11 +449,12 @@ module parallel_xfft_top #(
   output logic [1:0] event_fft_overflow,
   output logic [1:0] event_data_in_channel_halt,
 
-  output logic [1:0] full
+  output logic full
 );
 
 alpaca_axis #(.dtype(cx_pkt_t), .TUSER(TUSER)) s_axis();
-alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
+//alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
+alpaca_axis #(.dtype(arith_pkt_t), .TUSER(2*TUSER)) m_axis_Xk();
 
 impulse_generator6 #(
   .FFT_LEN(FFT_LEN),
@@ -409,7 +468,8 @@ impulse_generator6 #(
 );
 
 parallel_xfft #(
-  .TUSER(TUSER)
+  .TUSER(TUSER),
+  .TWIDDLE_FILE(TWIDDLE_FILE)
 ) p_xfft_inst (
   .clk(clk),
   .rst(rst),
@@ -417,8 +477,9 @@ parallel_xfft #(
   .s_axis_config_x2(s_axis_fft_config_x2),
   .s_axis_config_x1(s_axis_fft_config_x1),
 
-  .m_axis_fft_x2(m_axis_fft_x2),
-  .m_axis_fft_x1(m_axis_fft_x1),
+  //.m_axis_fft_x2(m_axis_fft_x2),
+  //.m_axis_fft_x1(m_axis_fft_x1),
+  .m_axis_Xk(m_axis_Xk),
 
   .m_axis_fft_status_x2(m_axis_fft_status_x2),
   .m_axis_fft_status_x1(m_axis_fft_status_x1),
@@ -431,24 +492,34 @@ parallel_xfft #(
 );
 
 axis_vip #(
-  .dtype(cx_t),
+  .dtype(arith_pkt_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
-) x2_vip (
+) Xk_vip (
   .clk(clk),
   .rst(rst),
-  .s_axis(m_axis_fft_x2),
-  .full(full[1])
+  .s_axis(m_axis_Xk),
+  .full(full)
 );
 
-axis_vip #(
-  .dtype(cx_t),
-  .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
-) x1_vip (
-  .clk(clk),
-  .rst(rst),
-  .s_axis(m_axis_fft_x1),
-  .full(full[0])
-);
+//axis_vip #(
+//  .dtype(cx_t),
+//  .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
+//) x2_vip (
+//  .clk(clk),
+//  .rst(rst),
+//  .s_axis(m_axis_fft_x2),
+//  .full(full[1])
+//);
+//
+//axis_vip #(
+//  .dtype(cx_t),
+//  .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
+//) x1_vip (
+//  .clk(clk),
+//  .rst(rst),
+//  .s_axis(m_axis_fft_x1),
+//  .full(full[0])
+//);
 
 endmodule : parallel_xfft_top
 
@@ -457,12 +528,14 @@ endmodule : parallel_xfft_top
 *************************/
 parameter int PERIOD = 10;
 
+parameter TWIDDLE_FILE = "../cmpx_mult/twiddle_n32_b23.bin";
+
 parameter int FFT_LEN = 32;
 parameter int FFT_CONF_WID = 8;
 parameter int FFT_STAT_WID = 8;
-parameter int FRAMES = 2;
+parameter int FRAMES = 1;
 
-parameter int IMPULSE_PHA = 2;
+parameter int IMPULSE_PHA = 14;
 parameter int IMPULSE_VAL = 256;
 
 parameter int TUSER = 8;
@@ -482,7 +555,7 @@ logic [1:0] event_tlast_missing;
 logic [1:0] event_fft_overflow;
 logic [1:0] event_data_in_channel_halt;
 
-logic [1:0] full;
+logic full;
 
 clk_generator #(.PERIOD(PERIOD)) clk_gen_inst (.*);
 
@@ -492,7 +565,8 @@ parallel_xfft_top #( // pt_top
   .IMPULSE_PHA(IMPULSE_PHA),
   .IMPULSE_VAL(IMPULSE_VAL),
   .TUSER(TUSER),
-  .FRAMES(FRAMES)
+  .FRAMES(FRAMES),
+  .TWIDDLE_FILE(TWIDDLE_FILE)
 ) DUT (.*);
 
 task wait_cycles(int cycles=1);
@@ -514,34 +588,35 @@ initial begin
   wait_cycles(5); // xfft needs reset applied for at least 2.
   @(negedge clk); rst = 0;
 
-  while (full != 2'b11) begin
+  while (~full)
    wait_cycles(1);
-  end
 
   for (int i=0; i<FRAMES; i++) begin
     $display("Frame: %0d", i);
     for (int j=0; j<FFT_LEN/SAMP_PER_CLK; j++) begin
-      $display("hi: (re: 0x%0X, im: 0x%0X), lo: (re: 0x%0X, im: 0x%0X)",
-        DUT.x2_vip.ram[j].re, DUT.x2_vip.ram[j].im,
-        DUT.x1_vip.ram[j].re, DUT.x1_vip.ram[j].im);
+      for (int k=0; k<SAMP_PER_CLK; k++) begin
+        $display("Xk[%0d]: (re: 0x%0X, im: 0x%0X)", k, DUT.Xk_vip.ram[j][k].re, DUT.Xk_vip.ram[j][k].im);
+      end
     end
     $display("");
   end
 
-  // write formatted binary
-  fp = $fopen("parallel_fft.bin", "wb");
-  if (!fp) begin
-    $display("could not create file...");
-    $finish;
-  end
+  $writememh("parallel_fft_wbutterfly.hex", DUT.Xk_vip.ram);
+  $writememb("parallel_fft_wbutterfly.bin", DUT.Xk_vip.ram);
+  /// write formatted binary
+  //fp = $fopen("parallel_fft.bin", "wb");
+  //if (!fp) begin
+  //  $display("could not create file...");
+  //  $finish;
+  //end
 
-  for (int i=0; i<FRAMES; i++) begin
-    for (int j=0; j<FFT_LEN/SAMP_PER_CLK; j++) begin
-      $fwrite(fp, "%u", DUT.x2_vip.ram[j]); // writes 4 bytes in native endian format
-      $fwrite(fp, "%u", DUT.x1_vip.ram[j]);
-    end
-  end
-  $fclose(fp);
+  //for (int i=0; i<FRAMES; i++) begin
+  //  for (int j=0; j<FFT_LEN/SAMP_PER_CLK; j++) begin
+  //    $fwrite(fp, "%u", DUT.x2_vip.ram[j]); // writes 4 bytes in native endian format
+  //    $fwrite(fp, "%u", DUT.x1_vip.ram[j]);
+  //  end
+  //end
+  //$fclose(fp);
 
   //wait_cycles(20);
   //@(negedge clk); m_axis_fft_0.tready = 1; m_axis_fft_1.tready = 1;

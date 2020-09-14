@@ -59,6 +59,13 @@ def s8(v):
 def s16(v):
   return -(v & 0x8000) | (v & 0x7fff)
 
+def toUnsigned(v, bits):
+  mask = 1 << (bits-1)
+  return (v & mask) | (v & (mask-1))
+
+def toSigned(v, bits):
+  mask = 1 << (bits-1)
+  return -(v & mask) | (v & (mask-1))
 
 def sgn(v, w):
   mask = 0b1 << (w-1)
@@ -181,7 +188,7 @@ if __name__=="__main__":
   # so while this isn't perfect this at least encapsulates the approach 
 
   # python math has the modf function that will return fractional and whole parts
-  import math.modf
+  from math import modf
   v = 3.175
   f, i = modf(v)
 

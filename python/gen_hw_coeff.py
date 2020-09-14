@@ -36,7 +36,7 @@ if __name__=="__main__":
   filter_pk = np.max(h)
   lsb_scale = filter_pk/(2**(BITS-1)-1)
 
-  h_scale = h/lsb_scale;
+  h_scale = h/lsb_scale; # forgetting rounding step...
 
   h_quant = np.array(h_scale, dtype=np.int16)
 

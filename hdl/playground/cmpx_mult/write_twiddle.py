@@ -3,18 +3,16 @@ import numpy as np
 
 if __name__=="__main__":
 
-  fname = "twiddle_n32_b23.bin"
-
   bits = 23
   verify_fmt = "{{:0{:d}x}}".format(int(np.ceil(bits/4)))
   packed_fmt = "{{:0{:d}x}}".format(int(2*np.ceil(bits/4))) # {im, re} packed
 
-  Nfft = 16
+  Nfft = 32
   Nfft_2 = Nfft//2
 
   k = np.arange(0, Nfft_2)
 
-  Wk = np.exp(1j*2*np.pi*k/Nfft_2)
+  Wk = np.exp(-1j*2*np.pi*k/Nfft)
 
   lsb_scale = 2**(-(bits-1))
 
@@ -26,6 +24,7 @@ if __name__=="__main__":
   Wk_im_sat = np.where(Wk_im < -2**(bits-1), -2**(bits-1), Wk_im)
   Wk_im_quant = np.int64(Wk_im_sat)
 
+  fname = "twiddle_n{:d}_b{:d}.bin".format(Nfft, bits)
   fp = open(fname, 'w')
   for i in range(0,Nfft_2):
     xq = toUnsigned(Wk_im_quant[i], bits)
