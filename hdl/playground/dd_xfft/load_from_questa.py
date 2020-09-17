@@ -1,6 +1,7 @@
 from fixedpoint import toSigned
 import numpy as np
 from numpy.fft import fft
+import matplotlib.pyplot as plt
 """
   readmemb is probably the best method to use because working on the bit
   level means you don't have to really worry about the nibble (4-bit) boundary
@@ -48,7 +49,7 @@ if __name__=="__main__":
   """
   """
   xsim = np.zeros(Nfft, dtype=np.complex)
-  xsim[14] = 256 # impulse for first complex fundamental on output
+  xsim[2] = 256 # impulse for first complex fundamental on output
 
   x1sim = xsim[0::2]
   x2sim = xsim[1::2]
@@ -61,3 +62,23 @@ if __name__=="__main__":
   Xlosim = X1sim + Wk*X2sim
   Xhisim = X1sim - Wk*X2sim
   Xksim = np.concatenate([Xlosim, Xhisim])
+
+  fig, ax = plt.subplots(2, 1)
+
+  ax[0].stem(n, np.real(xsim))
+  ax[0].grid()
+
+  ax[1].plot(n, np.real(Xk), label="Hardware")
+  ax[1].plot(n, np.real(Xksim), label="FP Simulation", linestyle='--')
+  ax[1].legend(loc="upper right")
+  ax[1].grid()
+
+  ax[0].title.set_text('FFT Input Sequence')
+  ax[0].set_ylabel('arb. units')
+  ax[0].set_xlabel('Sample Index')
+
+  ax[1].title.set_text('FFT Output')
+  ax[1].set_ylabel('arb. units')
+  ax[1].set_xlabel('Bin Index')
+
+  fig.tight_layout()

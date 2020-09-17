@@ -535,7 +535,7 @@ parameter int FFT_CONF_WID = 8;
 parameter int FFT_STAT_WID = 8;
 parameter int FRAMES = 1;
 
-parameter int IMPULSE_PHA = 14;
+parameter int IMPULSE_PHA = 2;
 parameter int IMPULSE_VAL = 256;
 
 parameter int TUSER = 8;
