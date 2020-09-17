@@ -177,3 +177,22 @@ Also, you don't know the type of the port just by looking at it...
 Also learned today that `$bits` function is understood by vivado syntehsis as it
 correctly set a localparam when trying to figure out the width of my packed
 struct. `localparam width = $bits(dtype)`
+
+# 09/17/2020
+One of the problem with data types is that I just learned in the context of
+memory that Vivado can't infer a memory. For example `wk_t twiddle [FFT_LEN/2]`
+failed to get a ROM. I had to help it by saying `logic [$bits(wk_t)-1:0] twiddle
+[FFT_LEN/2]`. This is one of those subtle things that argues for widths to be
+thrown around as parameters...
+
+Also, with interfaces it is seemingly annoying to read the synthesis report and
+determin if the "unconnected port" warnings are because I missed something or if
+because something in the protocol wasn't implemented. This seems to be in favor
+of not using interfaces and verbosly declaring the ports. Then instead use the
+system verilog `.*` to shorten making all the connections. However, as long as
+you read them and go through the report and can convince yourself they aren't
+used and won't be a problem it isn't that big a deal.
+
+I think the right thing to do is just have more interfaces defined that covers
+all of our different types. It is verbose and descriptive. Work up front but
+overall helpful.

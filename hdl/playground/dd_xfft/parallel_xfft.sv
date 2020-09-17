@@ -77,6 +77,7 @@ interface alpaca_axis #(parameter type dtype, parameter TUSER) ();
 
 endinterface
 
+
 /****************************
     Data source generator 
 *****************************/
@@ -217,12 +218,16 @@ xfft_0 xfft_inst (
   .event_data_in_channel_halt(event_data_in_channel_halt)
 );
 
+assign m_axis_status.tuser = '0;
+assign m_axis_status.tlast = 1'b0;
+
 endmodule : sv_xfft_0_wrapper
 
 /*******************************************
   Simple parallel fft from Xilinx fft's
 ********************************************/
 module parallel_xfft #(
+  parameter int FFT_LEN=16,
   parameter int TUSER=8,
   parameter TWIDDLE_FILE=""
 ) (
@@ -299,8 +304,6 @@ sv_xfft_0_wrapper xfft_1 (
 
 alpaca_butterfly #(
   .FFT_LEN(FFT_LEN),
-  .WIDTH(WIDTH),
-  .PHASE_WIDTH(PHASE_WIDTH),
   .TWIDDLE_FILE(TWIDDLE_FILE)
 ) butterfly_inst (
   .clk(clk),
@@ -468,6 +471,7 @@ impulse_generator6 #(
 );
 
 parallel_xfft #(
+  .FFT_LEN(FFT_LEN),
   .TUSER(TUSER),
   .TWIDDLE_FILE(TWIDDLE_FILE)
 ) p_xfft_inst (
@@ -535,7 +539,7 @@ parameter int FFT_CONF_WID = 8;
 parameter int FFT_STAT_WID = 8;
 parameter int FRAMES = 1;
 
-parameter int IMPULSE_PHA = 2;
+parameter int IMPULSE_PHA = 12;
 parameter int IMPULSE_VAL = 256;
 
 parameter int TUSER = 8;
