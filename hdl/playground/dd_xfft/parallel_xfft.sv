@@ -23,125 +23,184 @@
       errors where, especially when moving to ifft need to remove the negative
 
     * clean up cmult files, cosolodate python files
-
 */
 
-/*******************************
-  parameters and interface
-********************************/
+/*****************************************
+  packages for parameters and types
+******************************************/
+package alpaca_constants_pkg;
+
+  parameter int WIDTH = 16;
+  parameter int PHASE_WIDTH = 23;
+  parameter int SAMP_PER_CLK = 2;
+
+  parameter int FFT_CONF_WID = 8;
+  parameter int FFT_STAT_WID = 8;
+
+endpackage : alpaca_constants_pkg
+
 package alpaca_dtypes_pkg;
+  import alpaca_constants_pkg::*;
 
-parameter int WIDTH = 16;
-parameter int PHASE_WIDTH = 23;
-parameter int SAMP_PER_CLK = 2;
+  typedef logic signed [WIDTH-1:0] sample_t;
 
-typedef logic signed [WIDTH-1:0] sample_t;
+  typedef struct packed {
+    logic signed [WIDTH-1:0] im;
+    logic signed [WIDTH-1:0] re;
+  } cx_t;
 
-typedef struct packed {
-  logic signed [WIDTH-1:0] im;
-  logic signed [WIDTH-1:0] re;
-} cx_t;
+  typedef cx_t [SAMP_PER_CLK-1:0] cx_pkt_t;
 
-typedef cx_t [SAMP_PER_CLK-1:0] cx_pkt_t;
+  typedef sample_t [SAMP_PER_CLK-1:0] fir_t;
 
-typedef sample_t [SAMP_PER_CLK-1:0] fir_t;
+  // alpaca butterfly types
+  typedef struct packed {
+    logic signed [PHASE_WIDTH-1:0] im;
+    logic signed [PHASE_WIDTH-1:0] re;
+  } wk_t;
 
-// alpaca butterfly types
-typedef struct packed {
-  logic signed [PHASE_WIDTH-1:0] im;
-  logic signed [PHASE_WIDTH-1:0] re;
-} wk_t;
+  // TODO: get correct width
+  // but this represents the growth required from mult and 1 add
+  typedef struct packed {
+    logic signed [PHASE_WIDTH+WIDTH:0] im;
+    logic signed [PHASE_WIDTH+WIDTH:0] re;
+  } arith_t;
 
-// TODO: get correct width
-// but this represents the growth required from mult and 1 add
-typedef struct packed {
-  logic signed [PHASE_WIDTH+WIDTH:0] im;
-  logic signed [PHASE_WIDTH+WIDTH:0] re;
-} arith_t;
+  typedef arith_t [SAMP_PER_CLK-1:0] arith_pkt_t;
 
-typedef arith_t [SAMP_PER_CLK-1:0] arith_pkt_t;
+endpackage : alpaca_dtypes_pkg
 
-endpackage
+/*****************************************
+  interfaces
+******************************************/
 
+import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
-interface alpaca_axis #(parameter type dtype, parameter TUSER) ();
-
+// option 1 single general parameterized with several modports
+interface alpaca_axis #(parameter type dtype=cx_pkt_t, parameter TUSER=8) ();
   dtype tdata;
   logic tvalid, tready;
   logic tlast;
   logic [TUSER-1:0] tuser;
 
+  modport MST                  (input tready, output tdata, tvalid, tlast, tuser);
+  modport MST_LAST             (input tready, output tdata, tvalid, tlast);
+  modport MST_NO_SBS           (input tready, output tdata, tvalid);
+  modport MST_NO_PRESSURE      (output tdata, tvalid);
+  modport MST_LAST_NO_PRESSURE (output tdata, tvalid, tlast);
+
+  modport SLV                  (input tdata, tvalid, tlast, tuser, output tready);
+  modport SLV_LAST             (input tdata, tvalid, tlast, output tready);
+  modport SLV_NO_SBS           (input tdata, tvalid, output tready);
+  modport SLV_NO_PRESSURE      (input tdata, tvalid);
+  modport SLV_LAST_NO_PRESSURE (input tdata, tvalid, tlast);
+endinterface
+
+// option 2 new interface for each data type and axis protocol support
+//interface alpaca_xfft_data_axis ();
+//endinterface : alpaca_xfft_data_axis
+
+interface alpaca_xfft_status_axis #(parameter type dtype = logic [FFT_STAT_WID-1:0]) ();
+  dtype tdata;
+  logic tvalid;
+
+  modport MST (output tdata, tvalid);
+endinterface : alpaca_xfft_status_axis
+
+interface alpaca_xfft_config_axis #(parameter type dtype = logic [FFT_CONF_WID-1:0]) ();
+  dtype tdata;
+  logic tvalid, tready;
+
+  modport MST (input tready, output tdata, tvalid);
+  modport SLV (input tdata, tvalid, output tready);
+endinterface : alpaca_xfft_config_axis
+
+interface alpaca_data_pkt_axis #(
+  parameter type dtype = cx_t,
+  parameter SAMP_PER_CLK=2,
+  parameter TUSER=8
+) (
+);
+  // honestly, this seems redundant and superfulous, might as well just keep everything as a
+  // global typedef
+  localparam samp_per_clk = SAMP_PER_CLK;
+  typedef dtype [SAMP_PER_CLK-1:0] data_pkt_t;
+
+  data_pkt_t tdata;
+  logic tvalid, tready, tlast;
+  logic [TUSER-1:0] tuser;
+
   modport MST (input tready, output tdata, tvalid, tlast, tuser);
   modport SLV (input tdata, tvalid, tlast, tuser, output tready);
 
-endinterface
-
+endinterface : alpaca_data_pkt_axis
 
 /****************************
     Data source generator 
 *****************************/
 module impulse_generator6 #(
   parameter int FFT_LEN=16,
-  parameter int SAMP_PER_CLK=2,
   parameter int IMPULSE_PHA=0,
   parameter int IMPULSE_VAL=1
 ) (
   input wire logic clk,
   input wire logic rst,
 
-  alpaca_axis.MST m_axis
+  alpaca_data_pkt_axis.MST m_axis
 );
 
-localparam MEM_DEPTH = FFT_LEN/SAMP_PER_CLK;
+  typedef m_axis.data_pkt_t data_pkt_t;
+  localparam SAMP_PER_CLK = m_axis.samp_per_clk;
+  localparam MEM_DEPTH = FFT_LEN/SAMP_PER_CLK;
 
-logic [$clog2(MEM_DEPTH)-1:0] rAddr;
+  //logic signed [$bits(data_pkt_t)-1:0] ram [MEM_DEPTH];
+  data_pkt_t ram [MEM_DEPTH];
 
-cx_pkt_t ram [MEM_DEPTH];
+  logic [$clog2(MEM_DEPTH)-1:0] rAddr;
 
-initial begin
-  for (int i=0; i<MEM_DEPTH; i++) begin
-    cx_pkt_t pkt;
-    for (int j=0; j<SAMP_PER_CLK; j++) begin
-      cx_t tmp;
-      // load counter in either real, imaginary or both
-      tmp.re = i*SAMP_PER_CLK+ j;
-      //tmp.im = i*SAMP_PER_CLK+ j;
-      // load impulse value
-      tmp.re = (i*SAMP_PER_CLK+j == IMPULSE_PHA) ? IMPULSE_VAL : '0;
-      tmp.im = '0;
+  initial begin
+    for (int i=0; i<MEM_DEPTH; i++) begin
+      data_pkt_t pkt;
+      for (int j=0; j<SAMP_PER_CLK; j++) begin
+        cx_t tmp;
+        // load counter in either real, imaginary or both
+        tmp.re = i*SAMP_PER_CLK+ j;
+        //tmp.im = i*SAMP_PER_CLK+ j;
+        // load impulse value
+        tmp.re = (i*SAMP_PER_CLK+j == IMPULSE_PHA) ? IMPULSE_VAL : '0;
+        tmp.im = '0;
 
-      pkt[j] = tmp;
+        pkt[j] = tmp;
+      end
+    ram[i] = pkt;
     end
-  ram[i] = pkt;
   end
-end
 
-always_ff @(posedge clk)
-  if (rst)
-    rAddr <= '0;
-  else if (m_axis.tready)
-    rAddr <= rAddr + 1; //+ samp_per_clk;
-  else
-    rAddr <= rAddr;
+  always_ff @(posedge clk)
+    if (rst)
+      rAddr <= '0;
+    else if (m_axis.tready)
+      rAddr <= rAddr + 1; //+ samp_per_clk;
+    else
+      rAddr <= rAddr;
 
-assign m_axis.tdata = { >> {ram[rAddr]}};
-assign m_axis.tvalid = (~rst & m_axis.tready);
-assign m_axis.tlast = (rAddr == MEM_DEPTH-1) ? 1'b1 : 1'b0;
-assign m_axis.tuser = '0;
+  assign m_axis.tdata = { >> {ram[rAddr]}};
+  assign m_axis.tvalid = (~rst & m_axis.tready);
+  assign m_axis.tlast = (rAddr == MEM_DEPTH-1) ? 1'b1 : 1'b0;
+  assign m_axis.tuser = '0;
 
 endmodule : impulse_generator6
 
 ////////////////////////////////////////
 
 // purley combinational
-module seperate_stream #(
+module seperate_stream
+(
+  alpaca_data_pkt_axis.SLV s_axis,
 
-) (
-  alpaca_axis.SLV s_axis,
-
-  alpaca_axis.MST m_axis_x2, // hi, newest (odd sample, time idx)
-  alpaca_axis.MST m_axis_x1  // lo, oldest (even sample, time idx)
+  alpaca_data_pkt_axis.MST m_axis_x2, // hi, newest (odd sample, time idx)
+  alpaca_data_pkt_axis.MST m_axis_x1  // lo, oldest (even sample, time idx)
 );
 
   // just an AXIS passthrough, re-wire
@@ -162,7 +221,6 @@ module seperate_stream #(
 
 endmodule : seperate_stream
 
-
 /**********************************
   system verilog xfft wrapper
 ***********************************/
@@ -171,11 +229,11 @@ module sv_xfft_0_wrapper (
   input wire logic clk,
   input wire logic rst,
 
-  alpaca_axis.SLV s_axis_data,
-  alpaca_axis.SLV s_axis_config,
+  alpaca_data_pkt_axis.SLV      s_axis_data,
+  alpaca_xfft_config_axis.SLV   s_axis_config,
 
-  alpaca_axis.MST m_axis_data,
-  alpaca_axis.MST m_axis_status,
+  alpaca_data_pkt_axis.MST       m_axis_data,
+  alpaca_xfft_status_axis.MST   m_axis_status,
 
   output logic event_frame_started,
   output logic event_tlast_unexpected,
@@ -184,42 +242,43 @@ module sv_xfft_0_wrapper (
   output logic event_data_in_channel_halt
 );
 
-// xilinx fft is reset low
-logic aresetn;
-assign aresetn = ~rst;
+  // xilinx fft is reset low
+  logic aresetn;
+  assign aresetn = ~rst;
 
-xfft_0 xfft_inst (
-  .aclk(clk), 
-  .aresetn(aresetn),
-  // Confguration channel to set inverse transform and scaling schedule
-  // (width dependent on configuration and selected optional features)
-  .s_axis_config_tdata(s_axis_config.tdata),
-  .s_axis_config_tvalid(s_axis_config.tvalid),
-  .s_axis_config_tready(s_axis_config.tready),
+  cx_t s_tmp, m_tmp;
+  assign s_tmp = s_axis_data.tdata;
+  assign m_axis_data.tdata = m_tmp;
 
-  .s_axis_data_tdata(s_axis_data.tdata),
-  .s_axis_data_tvalid(s_axis_data.tvalid),
-  .s_axis_data_tready(s_axis_data.tready),
-  .s_axis_data_tlast(s_axis_data.tlast),
+  xfft_0 xfft_inst (
+    .aclk(clk), 
+    .aresetn(aresetn),
+    // Confguration channel to set inverse transform and scaling schedule
+    // (width dependent on configuration and selected optional features)
+    .s_axis_config_tdata(s_axis_config.tdata),
+    .s_axis_config_tvalid(s_axis_config.tvalid),
+    .s_axis_config_tready(s_axis_config.tready),
 
-  .m_axis_data_tdata(m_axis_data.tdata),
-  .m_axis_data_tvalid(m_axis_data.tvalid),
-  .m_axis_data_tlast(m_axis_data.tlast),
-  .m_axis_data_tuser(m_axis_data.tuser),
-  // Status channel for overflow information and optional Xk index
-  // (width dependent on configuration and selected optional features)
-  .m_axis_status_tdata(m_axis_status.tdata),
-  .m_axis_status_tvalid(m_axis_status.tvalid),
+    .s_axis_data_tdata(s_tmp),
+    .s_axis_data_tvalid(s_axis_data.tvalid),
+    .s_axis_data_tready(s_axis_data.tready),
+    .s_axis_data_tlast(s_axis_data.tlast),
 
-  .event_frame_started(event_frame_started),
-  .event_tlast_unexpected(event_tlast_unexpected),
-  .event_tlast_missing(event_tlast_missing),
-  .event_fft_overflow(event_fft_overflow),
-  .event_data_in_channel_halt(event_data_in_channel_halt)
-);
+    .m_axis_data_tdata(m_tmp),
+    .m_axis_data_tvalid(m_axis_data.tvalid),
+    .m_axis_data_tlast(m_axis_data.tlast),
+    .m_axis_data_tuser(m_axis_data.tuser),
+    // Status channel for overflow information and optional Xk index
+    // (width dependent on configuration and selected optional features)
+    .m_axis_status_tdata(m_axis_status.tdata),
+    .m_axis_status_tvalid(m_axis_status.tvalid),
 
-assign m_axis_status.tuser = '0;
-assign m_axis_status.tlast = 1'b0;
+    .event_frame_started(event_frame_started),
+    .event_tlast_unexpected(event_tlast_unexpected),
+    .event_tlast_missing(event_tlast_missing),
+    .event_fft_overflow(event_fft_overflow),
+    .event_data_in_channel_halt(event_data_in_channel_halt)
+  );
 
 endmodule : sv_xfft_0_wrapper
 
@@ -234,17 +293,17 @@ module parallel_xfft #(
   input wire logic clk,
   input wire logic rst,
 
-  alpaca_axis.SLV s_axis,
-  alpaca_axis.SLV s_axis_config_x2,
-  alpaca_axis.SLV s_axis_config_x1,
+  alpaca_data_pkt_axis.SLV s_axis,
+  alpaca_xfft_config_axis.SLV s_axis_config_x2,
+  alpaca_xfft_config_axis.SLV s_axis_config_x1,
 
   //alpaca_axis.MST m_axis_fft_x2,
   //alpaca_axis.MST m_axis_fft_x1,
 
-  alpaca_axis.MST m_axis_fft_status_x2,
-  alpaca_axis.MST m_axis_fft_status_x1,
+  alpaca_xfft_status_axis.MST m_axis_fft_status_x2,
+  alpaca_xfft_status_axis.MST m_axis_fft_status_x1,
 
-  alpaca_axis.MST m_axis_Xk,
+  alpaca_data_pkt_axis.MST m_axis_Xk,
 
   output logic [1:0] event_frame_started,
   output logic [1:0] event_tlast_unexpected,
@@ -253,8 +312,8 @@ module parallel_xfft #(
   output logic [1:0] event_data_in_channel_halt
 );
 
-alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) s_axis_fft_x2(), s_axis_fft_x1();
-alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(1), .TUSER(TUSER)) s_axis_fft_x2(), s_axis_fft_x1();
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(1), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
 
 seperate_stream ss_inst (//no clk -- combinational circuit
   .s_axis(s_axis),
@@ -317,21 +376,24 @@ endmodule : parallel_xfft
 
 /********************************************
   simple dtype parameterized capture
-  - stores `DEPTH` number of `dtype` words
+  - stores `DEPTH` number of `s_axis.tdata` words
 *********************************************/
 module axis_vip #(
-  parameter type dtype,
+  //parameter type dtype=logic [WIDTH-1:0],
   parameter int DEPTH=1024
 ) (
   input wire logic clk,
   input wire logic rst,
 
-  alpaca_axis.SLV s_axis,
+  alpaca_data_pkt_axis.SLV s_axis,
   output logic full
 );
 
+typedef s_axis.data_pkt_t data_pkt_t;
+
+data_pkt_t ram [DEPTH];
+
 logic [$clog2(DEPTH)-1:0] wAddr;
-dtype ram [DEPTH];
 logic wen;
 
 assign wen = (s_axis.tready & s_axis.tvalid);
@@ -381,8 +443,8 @@ module pt_top #(
   output logic [1:0] full
 );
 
-alpaca_axis #(.dtype(cx_pkt_t), .TUSER(TUSER)) s_axis();
-alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_x1(), m_axis_x2();
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(TUSER)) s_axis();
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(1), .TUSER(TUSER)) m_axis_x1(), m_axis_x2();
 
 impulse_generator6 #(
   .FFT_LEN(FFT_LEN),
@@ -402,7 +464,7 @@ seperate_stream ss_inst (//no clk -- combinational circuit
 );
 
 axis_vip #(
-  .dtype(cx_t),
+  //.dtype(cx_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) x2_vip (
   .clk(clk),
@@ -412,7 +474,7 @@ axis_vip #(
 );
 
 axis_vip #(
-  .dtype(cx_t),
+  //.dtype(cx_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) x1_vip (
   .clk(clk),
@@ -440,11 +502,11 @@ module parallel_xfft_top #(
   input wire logic clk,
   input wire logic rst,
 
-  alpaca_axis.SLV s_axis_fft_config_x2,
-  alpaca_axis.SLV s_axis_fft_config_x1,
+  alpaca_xfft_config_axis.SLV s_axis_fft_config_x2,
+  alpaca_xfft_config_axis.SLV s_axis_fft_config_x1,
 
-  alpaca_axis.MST m_axis_fft_status_x2,
-  alpaca_axis.MST m_axis_fft_status_x1,
+  alpaca_xfft_status_axis.MST m_axis_fft_status_x2,
+  alpaca_xfft_status_axis.MST m_axis_fft_status_x1,
 
   output logic [1:0] event_frame_started,
   output logic [1:0] event_tlast_unexpected,
@@ -455,13 +517,12 @@ module parallel_xfft_top #(
   output logic full
 );
 
-alpaca_axis #(.dtype(cx_pkt_t), .TUSER(TUSER)) s_axis();
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(TUSER)) s_axis();
 //alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
-alpaca_axis #(.dtype(arith_pkt_t), .TUSER(2*TUSER)) m_axis_Xk();
+alpaca_data_pkt_axis #(.dtype(arith_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(2*TUSER)) m_axis_Xk();
 
 impulse_generator6 #(
   .FFT_LEN(FFT_LEN),
-  .SAMP_PER_CLK(SAMP_PER_CLK),
   .IMPULSE_PHA(IMPULSE_PHA),
   .IMPULSE_VAL(IMPULSE_VAL)
 ) impulse_gen_inst (
@@ -496,7 +557,7 @@ parallel_xfft #(
 );
 
 axis_vip #(
-  .dtype(arith_pkt_t),
+  //.dtype(arith_pkt_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) Xk_vip (
   .clk(clk),
@@ -504,26 +565,6 @@ axis_vip #(
   .s_axis(m_axis_Xk),
   .full(full)
 );
-
-//axis_vip #(
-//  .dtype(cx_t),
-//  .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
-//) x2_vip (
-//  .clk(clk),
-//  .rst(rst),
-//  .s_axis(m_axis_fft_x2),
-//  .full(full[1])
-//);
-//
-//axis_vip #(
-//  .dtype(cx_t),
-//  .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
-//) x1_vip (
-//  .clk(clk),
-//  .rst(rst),
-//  .s_axis(m_axis_fft_x1),
-//  .full(full[0])
-//);
 
 endmodule : parallel_xfft_top
 
@@ -535,11 +576,9 @@ parameter int PERIOD = 10;
 parameter TWIDDLE_FILE = "../cmpx_mult/twiddle_n32_b23.bin";
 
 parameter int FFT_LEN = 32;
-parameter int FFT_CONF_WID = 8;
-parameter int FFT_STAT_WID = 8;
 parameter int FRAMES = 1;
 
-parameter int IMPULSE_PHA = 12;
+parameter int IMPULSE_PHA = 4;
 parameter int IMPULSE_VAL = 256;
 
 parameter int TUSER = 8;
@@ -548,10 +587,10 @@ module tb();
 
 logic clk, rst;
 
-alpaca_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
-// xfft defaults to forward transform can't remember default scaling
-alpaca_axis #(.dtype(logic [FFT_CONF_WID-1:0]), .TUSER(TUSER)) s_axis_fft_config_x1(), s_axis_fft_config_x2();
-alpaca_axis #(.dtype(logic [FFT_STAT_WID-1:0]), .TUSER(TUSER)) m_axis_fft_status_x1(), m_axis_fft_status_x2();
+alpaca_data_pkt_axis #(.dtype(cx_t), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
+// xfft defaults to forward transform and a default scaling for selected architecture
+alpaca_xfft_config_axis s_axis_fft_config_x1(), s_axis_fft_config_x2();
+alpaca_xfft_status_axis m_axis_fft_status_x1(), m_axis_fft_status_x2();
 
 logic [1:0] event_frame_started;
 logic [1:0] event_tlast_unexpected;
@@ -573,7 +612,7 @@ parallel_xfft_top #( // pt_top
   .TWIDDLE_FILE(TWIDDLE_FILE)
 ) DUT (.*);
 
-task wait_cycles(int cycles=1);
+task wait_cycles(input int cycles=1);
   repeat (cycles)
     @(posedge clk);
 endtask

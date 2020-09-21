@@ -11,29 +11,23 @@ module alpaca_butterfly #(
 ) (
   input wire logic clk,
   input wire logic rst,
-  alpaca_axis.SLV x1,
-  alpaca_axis.SLV x2,
+  alpaca_data_pkt_axis.SLV x1,
+  alpaca_data_pkt_axis.SLV x2,
 
-  alpaca_axis.MST Xk
+  alpaca_data_pkt_axis.MST Xk
   // mst tready not implemented, assuming downstream can accept
   // possible error check is to create an output put and have
   // that driven by when the mst is valid and the mst (slv) not ready
 );
 
-// could not simply do 'wk_t twiddle [FFT_LEN/2]`
-// Vivado synthesis would warn that the readmemh task was malformed and that 'twiddle' was an
-// 'invalid memory name'. Therefore in the context of memory Vivado cannot recognize that a
-// packed struct is just a vector of bits. Adding the $bits() call was enough to help vivado
-// out... this is a bug... no reason vivado shouldn't be able to understand this.
-logic [$bits(wk_t)-1:0] twiddle [FFT_LEN/2];
+logic signed [$bits(wk_t)-1:0] twiddle [FFT_LEN/2];
 wk_t Wk;
 
 arith_t WkX2, Xkhi, Xklo;
 
 localparam phase_width = $bits(Wk.re);
-// I hate this because it is not descriptive or obvious that alpaca_axis tdata is really a cx_t
-// object. I like not having to pass the width through all the parameters but is that worth it?
-localparam width = $bits(x2.tdata)/2;
+
+localparam width = $bits(cx_t)/2;
 
 initial begin
   $readmemh(TWIDDLE_FILE, twiddle);
@@ -93,8 +87,8 @@ cmult #(
   .BWIDTH(phase_width)
 ) DUT (
   .clk(clk),
-  .ar(x2.tdata.re),
-  .ai(x2.tdata.im),
+  .ar(x2.tdata[0].re),
+  .ai(x2.tdata[0].im),
   .br(Wk.re),
   .bi(Wk.im),
   .pr(WkX2.re),

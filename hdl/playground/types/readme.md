@@ -179,11 +179,22 @@ correctly set a localparam when trying to figure out the width of my packed
 struct. `localparam width = $bits(dtype)`
 
 # 09/17/2020
-One of the problem with data types is that I just learned in the context of
-memory that Vivado can't infer a memory. For example `wk_t twiddle [FFT_LEN/2]`
-failed to get a ROM. I had to help it by saying `logic [$bits(wk_t)-1:0] twiddle
-[FFT_LEN/2]`. This is one of those subtle things that argues for widths to be
-thrown around as parameters...
+One of the problem with data types is that Vivado synthesis would warn that the
+readmemh task was malformed and that 'twiddle' was an 'invalid memory name'.
+Therefore in the context of memory Vivado cannot recognize that a packed struct
+is just a vector of bits. Adding the $bits() call was enough to help vivado
+out... (e.g. `logic signed [$bits(wk_t)-1:0] twiddle [FFT_LEN/2]`) this is a
+bug... no reason vivado shouldn't be able to understand this.  But this is one
+of those sutble things that argues for widths to be passed around as
+parameters...
+
+Also, considering this the importance of they keyword signed in the ROM
+inference raises a question. Because I was actually first doing simulations
+without it being labled signed and everything was coming out fine. However, I am
+not sure what would have happned in hardwre. I therefore changed it to
+explicitly say signed. But again this argues you can't do much by defining a
+type as signedin one spot and just have it propagate without to again have to
+explicitly declare something as signed.
 
 Also, with interfaces it is seemingly annoying to read the synthesis report and
 determin if the "unconnected port" warnings are because I missed something or if
@@ -196,3 +207,17 @@ used and won't be a problem it isn't that big a deal.
 I think the right thing to do is just have more interfaces defined that covers
 all of our different types. It is verbose and descriptive. Work up front but
 overall helpful.
+
+But I did learn that with Vivado Synthesis you can define modports that exclude
+some of the defined signals and the synthesis tool doesn't complain about it.
+That could be helpful in my case. Requires more interface definitions though.
+
+# 09/21/2020
+I didn't look at this HDL over the weekend. However, I tried to pick up where I
+left off above in the last paragraph stating that I had a standalone interface
+testbench that claimed that modports could be used to exclude signals. This
+worked in that standalone example (`playground/tmp_if` directory) but then when
+applied to my `parallel_xfft` work I didn't see the same effect in Vivado
+synthesis. The tool continued to complain about undriven and unconnected nets.
+So I am back at thinking several independently defined interfaces is the best
+way to go here.

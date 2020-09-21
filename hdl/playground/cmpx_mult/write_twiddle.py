@@ -7,7 +7,7 @@ if __name__=="__main__":
   verify_fmt = "{{:0{:d}x}}".format(int(np.ceil(bits/4)))
   packed_fmt = "{{:0{:d}x}}".format(int(2*np.ceil(bits/4))) # {im, re} packed
 
-  Nfft = 32
+  Nfft = 2048
   Nfft_2 = Nfft//2
 
   k = np.arange(0, Nfft_2)

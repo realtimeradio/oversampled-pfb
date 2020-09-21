@@ -9,11 +9,14 @@ package alpaca_ospfb_constants_pkg;
 //  `include "alpaca_ospfb_constants_pkg.svh"
 //`endif
 parameter WIDTH = 16;                // axi-sample word width, ADC samples padded to this width
+parameter SAMP_PER_CLK = 2;          // number of samples in adc packet
 parameter COEFF_WID = 16;            // filter coefficient word width
 
 parameter FFT_CONF_WID = 16;         // fft configuration width (set inverse and scale schedule
 parameter FFT_STAT_WID = 8;          // fft status width (overflow and optional Xk index)
 parameter FFT_USER_WID = 8;
+
+parameter PHASE_WIDTH = 23;          // precision for parallel fft twiddle factors
 
 parameter FFT_LEN = 2048;            // (M)   polyphase branches
 parameter OSRATIO = 3.0/4.0;
