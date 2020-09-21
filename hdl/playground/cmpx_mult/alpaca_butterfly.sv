@@ -5,8 +5,8 @@ import alpaca_dtypes_pkg::*;
 
 module alpaca_butterfly #(
   parameter int FFT_LEN=16,
-  parameter int WIDTH=16,
-  parameter int PHASE_WIDTH=23,
+  //parameter int WIDTH=16,
+  //parameter int PHASE_WIDTH=23,
   parameter TWIDDLE_FILE=""
 ) (
   input wire logic clk,
@@ -14,18 +14,26 @@ module alpaca_butterfly #(
   alpaca_axis.SLV x1,
   alpaca_axis.SLV x2,
 
-  // could possible just pass through x1 and x2 tuser too
-
   alpaca_axis.MST Xk
   // mst tready not implemented, assuming downstream can accept
   // possible error check is to create an output put and have
   // that driven by when the mst is valid and the mst (slv) not ready
 );
 
-wk_t twiddle [FFT_LEN/2];
+// could not simply do 'wk_t twiddle [FFT_LEN/2]`
+// Vivado synthesis would warn that the readmemh task was malformed and that 'twiddle' was an
+// 'invalid memory name'. Therefore in the context of memory Vivado cannot recognize that a
+// packed struct is just a vector of bits. Adding the $bits() call was enough to help vivado
+// out... this is a bug... no reason vivado shouldn't be able to understand this.
+logic [$bits(wk_t)-1:0] twiddle [FFT_LEN/2];
 wk_t Wk;
 
 arith_t WkX2, Xkhi, Xklo;
+
+localparam phase_width = $bits(Wk.re);
+// I hate this because it is not descriptive or obvious that alpaca_axis tdata is really a cx_t
+// object. I like not having to pass the width through all the parameters but is that worth it?
+localparam width = $bits(x2.tdata)/2;
 
 initial begin
   $readmemh(TWIDDLE_FILE, twiddle);
@@ -54,9 +62,9 @@ assign Wk = twiddle[ctr];
 // cmult latency + final add/sub (may need more, see above note)
 localparam AXIS_LAT = 7;
 localparam X1_LAT = AXIS_LAT-1;
-logic [1:0] axis_delay [AXIS_LAT-1:0]; // {tvalid, tlast}
+logic [AXIS_LAT-1:0][1:0] axis_delay; // {tvalid, tlast}
 // not sure if this is the best way to get the user width here...
-logic [$bits(Xk.tuser)-1:0] axis_tuser_delay [AXIS_LAT-1:0]; // concatenate x1/x2 tuser as {x1,x2}
+logic [AXIS_LAT-1:0][$bits(Xk.tuser)-1:0] axis_tuser_delay; // concatenate x1/x2 tuser as {x1,x2}
 
 // opting for x2 last/valid propagation
 always_ff @(posedge clk) begin
@@ -64,6 +72,10 @@ always_ff @(posedge clk) begin
   axis_tuser_delay <= {axis_tuser_delay[AXIS_LAT-2:0] , {x1.tuser, x2.tuser}};
 end
 
+// vivado synthesis comes back and says that this will most likely be implemented in registers
+// because the abstract data type recognition is not supported. Registers are what I want and
+// this is OK. But were I to change to `logic signed [X1_LAT-1:0][$bits(cx_t)-1:0] x1_delay;` I
+// would then not be able to pull out the real and imaginary part with .re/.im struct notation.
 cx_t [X1_LAT-1:0] x1_delay;
 
 always_ff @(posedge clk)
@@ -77,8 +89,8 @@ assign x1.tready = ~rst;
 assign x2.tready = ~rst;
 
 cmult #(
-  .AWIDTH(WIDTH),
-  .BWIDTH(PHASE_WIDTH)
+  .AWIDTH(width),
+  .BWIDTH(phase_width)
 ) DUT (
   .clk(clk),
   .ar(x2.tdata.re),

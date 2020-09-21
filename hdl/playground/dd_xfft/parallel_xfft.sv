@@ -6,7 +6,7 @@
     * configuration for ifft
     * scaling schedule configuration
     * rounding/scaling on output, but could also be done in the following block
-    * run through Vivado synthesis to get resources and fmax
+    * get resources and fmax from Vivado synthesis
       - fmax may be a function of if scaling happens or not, should ask latis,
         but with full growth the DSP slices should only be able to allow 40 bit wide
         without a penalty
