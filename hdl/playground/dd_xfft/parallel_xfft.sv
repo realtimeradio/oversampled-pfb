@@ -77,29 +77,27 @@ endpackage : alpaca_dtypes_pkg
 import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
-// option 1 single general parameterized with several modports
 interface alpaca_axis #(parameter type dtype=cx_pkt_t, parameter TUSER=8) ();
   dtype tdata;
-  logic tvalid, tready;
-  logic tlast;
+  logic tvalid, tready, tlast;
   logic [TUSER-1:0] tuser;
 
-  modport MST                  (input tready, output tdata, tvalid, tlast, tuser);
-  modport MST_LAST             (input tready, output tdata, tvalid, tlast);
-  modport MST_NO_SBS           (input tready, output tdata, tvalid);
-  modport MST_NO_PRESSURE      (output tdata, tvalid);
-  modport MST_LAST_NO_PRESSURE (output tdata, tvalid, tlast);
-
-  modport SLV                  (input tdata, tvalid, tlast, tuser, output tready);
-  modport SLV_LAST             (input tdata, tvalid, tlast, output tready);
-  modport SLV_NO_SBS           (input tdata, tvalid, output tready);
-  modport SLV_NO_PRESSURE      (input tdata, tvalid);
-  modport SLV_LAST_NO_PRESSURE (input tdata, tvalid, tlast);
+  modport MST (input tready, output tdata, tvalid, tlast, tuser);
+  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
 endinterface
 
-// option 2 new interface for each data type and axis protocol support
-//interface alpaca_xfft_data_axis ();
-//endinterface : alpaca_xfft_data_axis
+interface alpaca_xfft_data_axis #(
+  parameter type dtype = cx_t,
+  parameter int TUSER=8
+) ();
+  dtype tdata;
+  logic tvalid, tready, tlast;
+  logic [TUSER-1:0] tuser;
+
+  modport MST (input tready, output tdata, tvalid, tlast, tuser);
+  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
+
+endinterface : alpaca_xfft_data_axis
 
 interface alpaca_xfft_status_axis #(parameter type dtype = logic [FFT_STAT_WID-1:0]) ();
   dtype tdata;
@@ -120,10 +118,11 @@ interface alpaca_data_pkt_axis #(
   parameter type dtype = cx_t,
   parameter SAMP_PER_CLK=2,
   parameter TUSER=8
-) (
-);
+) ();
   // honestly, this seems redundant and superfulous, might as well just keep everything as a
-  // global typedef
+  // global typedef... but then it seems stupid to have parameters and interface in module...
+  // this is a real nightmare for me... I feel like this type thing is great but dragging me
+  // down
   localparam samp_per_clk = SAMP_PER_CLK;
   typedef dtype [SAMP_PER_CLK-1:0] data_pkt_t;
 
@@ -154,6 +153,7 @@ module impulse_generator6 #(
   localparam SAMP_PER_CLK = m_axis.samp_per_clk;
   localparam MEM_DEPTH = FFT_LEN/SAMP_PER_CLK;
 
+  // TODO: this still needs to be fixed for synthesis
   //logic signed [$bits(data_pkt_t)-1:0] ram [MEM_DEPTH];
   data_pkt_t ram [MEM_DEPTH];
 
@@ -199,12 +199,11 @@ module seperate_stream
 (
   alpaca_data_pkt_axis.SLV s_axis,
 
-  alpaca_data_pkt_axis.MST m_axis_x2, // hi, newest (odd sample, time idx)
-  alpaca_data_pkt_axis.MST m_axis_x1  // lo, oldest (even sample, time idx)
+  alpaca_xfft_data_axis.MST m_axis_x2, // hi, newest (odd sample, time idx)
+  alpaca_xfft_data_axis.MST m_axis_x1  // lo, oldest (even sample, time idx)
 );
 
   // just an AXIS passthrough, re-wire
-  // TODO: Is this the right thing to do (particularly with the s_axis)?
   assign s_axis.tready = (m_axis_x2.tready & m_axis_x1.tready);
 
   assign m_axis_x2.tdata = s_axis.tdata[1];
@@ -229,10 +228,10 @@ module sv_xfft_0_wrapper (
   input wire logic clk,
   input wire logic rst,
 
-  alpaca_data_pkt_axis.SLV      s_axis_data,
+  alpaca_xfft_data_axis.SLV     s_axis_data,
   alpaca_xfft_config_axis.SLV   s_axis_config,
 
-  alpaca_data_pkt_axis.MST       m_axis_data,
+  alpaca_xfft_data_axis.MST     m_axis_data,
   alpaca_xfft_status_axis.MST   m_axis_status,
 
   output logic event_frame_started,
@@ -246,10 +245,6 @@ module sv_xfft_0_wrapper (
   logic aresetn;
   assign aresetn = ~rst;
 
-  cx_t s_tmp, m_tmp;
-  assign s_tmp = s_axis_data.tdata;
-  assign m_axis_data.tdata = m_tmp;
-
   xfft_0 xfft_inst (
     .aclk(clk), 
     .aresetn(aresetn),
@@ -259,12 +254,12 @@ module sv_xfft_0_wrapper (
     .s_axis_config_tvalid(s_axis_config.tvalid),
     .s_axis_config_tready(s_axis_config.tready),
 
-    .s_axis_data_tdata(s_tmp),
+    .s_axis_data_tdata(s_axis_data.tdata),
     .s_axis_data_tvalid(s_axis_data.tvalid),
     .s_axis_data_tready(s_axis_data.tready),
     .s_axis_data_tlast(s_axis_data.tlast),
 
-    .m_axis_data_tdata(m_tmp),
+    .m_axis_data_tdata(m_axis_data.tdata),
     .m_axis_data_tvalid(m_axis_data.tvalid),
     .m_axis_data_tlast(m_axis_data.tlast),
     .m_axis_data_tuser(m_axis_data.tuser),
@@ -312,8 +307,8 @@ module parallel_xfft #(
   output logic [1:0] event_data_in_channel_halt
 );
 
-alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(1), .TUSER(TUSER)) s_axis_fft_x2(), s_axis_fft_x1();
-alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(1), .TUSER(TUSER)) m_axis_fft_x1(), m_axis_fft_x2();
+alpaca_xfft_data_axis s_axis_fft_x2(), s_axis_fft_x1();
+alpaca_xfft_data_axis m_axis_fft_x1(), m_axis_fft_x2();
 
 seperate_stream ss_inst (//no clk -- combinational circuit
   .s_axis(s_axis),
@@ -391,6 +386,7 @@ module axis_vip #(
 
 typedef s_axis.data_pkt_t data_pkt_t;
 
+// this still needs to be fixed for synthesis...
 data_pkt_t ram [DEPTH];
 
 logic [$clog2(DEPTH)-1:0] wAddr;
@@ -578,7 +574,7 @@ parameter TWIDDLE_FILE = "../cmpx_mult/twiddle_n32_b23.bin";
 parameter int FFT_LEN = 32;
 parameter int FRAMES = 1;
 
-parameter int IMPULSE_PHA = 4;
+parameter int IMPULSE_PHA = 2;
 parameter int IMPULSE_VAL = 256;
 
 parameter int TUSER = 8;

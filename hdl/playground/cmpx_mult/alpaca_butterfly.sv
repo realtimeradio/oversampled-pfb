@@ -11,8 +11,8 @@ module alpaca_butterfly #(
 ) (
   input wire logic clk,
   input wire logic rst,
-  alpaca_data_pkt_axis.SLV x1,
-  alpaca_data_pkt_axis.SLV x2,
+  alpaca_xfft_data_axis.SLV x1,
+  alpaca_xfft_data_axis.SLV x2,
 
   alpaca_data_pkt_axis.MST Xk
   // mst tready not implemented, assuming downstream can accept
@@ -27,7 +27,7 @@ arith_t WkX2, Xkhi, Xklo;
 
 localparam phase_width = $bits(Wk.re);
 
-localparam width = $bits(cx_t)/2;
+localparam width = $bits(sample_t);
 
 initial begin
   $readmemh(TWIDDLE_FILE, twiddle);
@@ -87,8 +87,8 @@ cmult #(
   .BWIDTH(phase_width)
 ) DUT (
   .clk(clk),
-  .ar(x2.tdata[0].re),
-  .ai(x2.tdata[0].im),
+  .ar(x2.tdata.re),
+  .ai(x2.tdata.im),
   .br(Wk.re),
   .bi(Wk.im),
   .pr(WkX2.re),

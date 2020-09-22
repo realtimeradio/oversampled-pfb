@@ -49,7 +49,7 @@ if __name__=="__main__":
   """
   """
   xsim = np.zeros(Nfft, dtype=np.complex)
-  xsim[4] = 256 # impulse for first complex fundamental on output
+  xsim[2] = 256 # impulse for first complex fundamental on output
 
   x1sim = xsim[0::2]
   x2sim = xsim[1::2]
