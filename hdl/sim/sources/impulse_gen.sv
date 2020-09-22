@@ -1,6 +1,67 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+/*************************************************************
+  Newer Data source generator from parallel fft development
+**************************************************************/
+module impulse_generator6 #(
+  parameter int FFT_LEN=16,
+  parameter int IMPULSE_PHA=0,
+  parameter int IMPULSE_VAL=1
+) (
+  input wire logic clk,
+  input wire logic rst,
+
+  alpaca_data_pkt_axis.MST m_axis
+);
+
+  typedef m_axis.data_pkt_t data_pkt_t;
+  localparam SAMP_PER_CLK = m_axis.samp_per_clk;
+  localparam MEM_DEPTH = FFT_LEN/SAMP_PER_CLK;
+
+  // TODO: this still needs to be fixed for synthesis
+  //logic signed [$bits(data_pkt_t)-1:0] ram [MEM_DEPTH];
+  data_pkt_t ram [MEM_DEPTH];
+
+  logic [$clog2(MEM_DEPTH)-1:0] rAddr;
+
+  initial begin
+    for (int i=0; i<MEM_DEPTH; i++) begin
+      data_pkt_t pkt;
+      for (int j=0; j<SAMP_PER_CLK; j++) begin
+        cx_t tmp;
+        // load counter in either real, imaginary or both
+        tmp.re = i*SAMP_PER_CLK+ j;
+        //tmp.im = i*SAMP_PER_CLK+ j;
+        // load impulse value
+        tmp.re = (i*SAMP_PER_CLK+j == IMPULSE_PHA) ? IMPULSE_VAL : '0;
+        tmp.im = '0;
+
+        pkt[j] = tmp;
+      end
+    ram[i] = pkt;
+    end
+  end
+
+  always_ff @(posedge clk)
+    if (rst)
+      rAddr <= '0;
+    else if (m_axis.tready)
+      rAddr <= rAddr + 1; //+ samp_per_clk;
+    else
+      rAddr <= rAddr;
+
+  assign m_axis.tdata = { >> {ram[rAddr]}};
+  assign m_axis.tvalid = (~rst & m_axis.tready);
+  assign m_axis.tlast = (rAddr == MEM_DEPTH-1) ? 1'b1 : 1'b0;
+  assign m_axis.tuser = '0;
+
+endmodule : impulse_generator6
+
+////////////////////////////////////////
+
+// Old original impulse generator
+
 /*
   Impulse generator module for creating a single pulse in a structured way that
   as the pulse propagates through the pfb as the pulse arrives at the fft each

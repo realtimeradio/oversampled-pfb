@@ -1,6 +1,6 @@
 `default_nettype none
 
-package alpaca_ospfb_constants_pkg;
+package alpaca_constants_pkg;
 
 // Module instantiation parameters
 
@@ -9,6 +9,7 @@ package alpaca_ospfb_constants_pkg;
 //  `include "alpaca_ospfb_constants_pkg.svh"
 //`endif
 parameter WIDTH = 16;                // axi-sample word width, ADC samples padded to this width
+parameter PHASE_WIDTH = 23;
 parameter SAMP_PER_CLK = 2;          // number of samples in adc packet
 parameter COEFF_WID = 16;            // filter coefficient word width
 
@@ -67,4 +68,4 @@ parameter BASE_COEF_FILE = $psprintf("coeff/hann/h_%0d_%0d_4_%%0d.coeff", FFT_LE
 //   
 //} ospfb_cfg_t;
 
-endpackage
+endpackage : alpaca_constants_pkg

@@ -27,5 +27,67 @@ interface alpaca_axis #(parameter type dtype, parameter TUSER) ();
 
 endinterface
 
-interface alpaca_cx_axis #(
+/****************************************************
+  recent new style interfaces from parallel xfft
+*****************************************************/
 
+import alpaca_constants_pkg::*;
+import alpaca_dtypes_pkg::*;
+
+interface alpaca_axis #(parameter type dtype=cx_pkt_t, parameter TUSER=8) ();
+  dtype tdata;
+  logic tvalid, tready, tlast;
+  logic [TUSER-1:0] tuser;
+
+  modport MST (input tready, output tdata, tvalid, tlast, tuser);
+  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
+endinterface
+
+interface alpaca_xfft_data_axis #(
+  parameter type dtype = cx_t,
+  parameter int TUSER=8
+) ();
+  dtype tdata;
+  logic tvalid, tready, tlast;
+  logic [TUSER-1:0] tuser;
+
+  modport MST (input tready, output tdata, tvalid, tlast, tuser);
+  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
+
+endinterface : alpaca_xfft_data_axis
+
+interface alpaca_xfft_status_axis #(parameter type dtype = logic [FFT_STAT_WID-1:0]) ();
+  dtype tdata;
+  logic tvalid;
+
+  modport MST (output tdata, tvalid);
+endinterface : alpaca_xfft_status_axis
+
+interface alpaca_xfft_config_axis #(parameter type dtype = logic [FFT_CONF_WID-1:0]) ();
+  dtype tdata;
+  logic tvalid, tready;
+
+  modport MST (input tready, output tdata, tvalid);
+  modport SLV (input tdata, tvalid, output tready);
+endinterface : alpaca_xfft_config_axis
+
+interface alpaca_data_pkt_axis #(
+  parameter type dtype = cx_t,
+  parameter SAMP_PER_CLK=2,
+  parameter TUSER=8
+) ();
+  // honestly, this seems redundant and superfulous, might as well just keep everything as a
+  // global typedef... but then it seems stupid to have parameters and interface in module...
+  // this is a real nightmare for me... I feel like this type thing is great but dragging me
+  // down
+  localparam samp_per_clk = SAMP_PER_CLK;
+  typedef dtype [SAMP_PER_CLK-1:0] data_pkt_t;
+
+  data_pkt_t tdata;
+  logic tvalid, tready, tlast;
+  logic [TUSER-1:0] tuser;
+
+  modport MST (input tready, output tdata, tvalid, tlast, tuser);
+  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
+
+endinterface : alpaca_data_pkt_axis

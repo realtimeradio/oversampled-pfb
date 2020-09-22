@@ -1,6 +1,13 @@
-//
 // Complex Multiplier (pr+i.pi) = (ar+i.ai)*(br+i.bi)
-// file: cmult.v
+
+// uses three multipler structure resulting in the inference of 3 DSP slices.
+
+// The 4 multipler approach (infers 4 DSP slices) tends to be for high performance (high
+// frequency designs) and the 3 multiplier is for resource optimization with lower frequencies.
+
+// The FFT core has this same configuration option to do 3 or 4 multipler (as well as
+// CLB logic). Talking with other people the are able to do 333 MHz in a 4096 point
+// FFT using the 3 multiplier structure without timing problems.
 
 module cmult # (parameter AWIDTH = 16, BWIDTH = 18)
    (
