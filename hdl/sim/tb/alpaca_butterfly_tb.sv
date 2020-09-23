@@ -2,7 +2,7 @@
 `default_nettype none
 
 parameter int PERIOD = 10;
-parameter TWIDDLE_FILE = "twiddle_n32_b23.bin";
+parameter TWIDDLE_FILE = "../../pkgs/twiddle_n32_b23.bin";
 
 package alpaca_butterfly_tb_pkg;
 

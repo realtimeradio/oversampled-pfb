@@ -1,6 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+import alpaca_dtypes_pkg::*;
+
 /******************************************************
   Top module: impulse -> parallel fft -> axis capture
 *******************************************************/
@@ -69,7 +71,7 @@ parallel_xfft #(
   .event_data_in_channel_halt(event_data_in_channel_halt) 
 );
 
-axis_vip #(
+parallel_axis_vip #(
   //.dtype(arith_pkt_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) Xk_vip (
@@ -84,11 +86,8 @@ endmodule : parallel_xfft_top
 /*************************
   TESTBENCH
 *************************/
-parameter int PERIOD = 10;
+import alpaca_constants_pkg::*;
 
-parameter TWIDDLE_FILE = "../cmpx_mult/twiddle_n32_b23.bin";
-
-parameter int FFT_LEN = 32;
 parameter int FRAMES = 1;
 
 parameter int IMPULSE_PHA = 2;

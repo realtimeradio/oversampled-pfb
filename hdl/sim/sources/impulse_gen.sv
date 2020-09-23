@@ -1,8 +1,10 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+import alpaca_dtypes_pkg::*;
+
 /*************************************************************
-  Newer Data source generator from parallel fft development
+  parallel source generator (from parallel fft development)
 **************************************************************/
 module impulse_generator6 #(
   parameter int FFT_LEN=16,
@@ -60,9 +62,10 @@ endmodule : impulse_generator6
 
 ////////////////////////////////////////
 
-// Old original impulse generator
-
 /*
+
+  Single sample impulse generator from original ospfb and xmp_ospfb work
+
   Impulse generator module for creating a single pulse in a structured way that
   as the pulse propagates through the pfb as the pulse arrives at the fft each
   frame will receive only a single value at a single input location resulting in
@@ -191,7 +194,7 @@ endmodule
   Impulse generator test bench
 */
 
-import alpaca_ospfb_constants_pkg::*;
+import alpaca_constants_pkg::*;
 module test_impulse_generator;
 
 // translating to ospfb parameters

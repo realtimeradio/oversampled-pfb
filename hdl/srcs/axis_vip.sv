@@ -1,11 +1,15 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-/************************************************
-  New axis vip from parallel xfft work
+import alpaca_dtypes_pkg::*;
+
+/*******************************************************************
+  axis vip capture with the ability to accept multiple (or single)
+  sample words (created in parallel xfft work)
+
   stores `DEPTH` number of `s_axis.tdata` words
-*************************************************/
-module axis_vip #(
+********************************************************************/
+module parallel_axis_vip #(
   //parameter type dtype=logic [WIDTH-1:0],
   parameter int DEPTH=1024
 ) (
@@ -18,7 +22,7 @@ module axis_vip #(
 
 typedef s_axis.data_pkt_t data_pkt_t;
 
-// this still needs to be fixed for synthesis...
+// this still needs to be fixed if used in synthesis...
 data_pkt_t ram [DEPTH];
 
 logic [$clog2(DEPTH)-1:0] wAddr;
@@ -53,11 +57,14 @@ always_ff @(posedge clk)
 
 assign s_axis.tready = (~full & ~rst);
 
-endmodule : axis_vip
+endmodule : parallel_axis_vip
+
+///////////////////////////////////////////////////////////////////////////////
 
 
-// Old axis_vip module from original ospfb work
 /*
+  Single sample module from original ospfb and xpm_ospfb
+
   Capture AXIS Samples from upstream until RAM is full.
 
   Cannot accept more samples until reset

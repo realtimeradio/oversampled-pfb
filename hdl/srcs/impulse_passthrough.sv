@@ -2,10 +2,13 @@
 `default_nettype none
 
 /*
-  copied from parallel xfft development as a module to keep
+  copied from parallel xfft development as a module to keep for later use and development
+  (potentially to use as a top module for a bitstream that just does impulse to bram)
 
-  At the time, this module was used to test the new impulse generator and axis_vip
-  modules that worked on multiple samples per clock.
+  At the time, this module was used to test the new impulse generator (impulse_generator6) and
+  axis vip modules to accept multiple samples per clock. (during the paralell xfft development
+  called axis_vip, renamed now to parallel_axis_vip until more work is done to move over or
+  snapshot the old files (ospfb and xpm_ospfb using axis_vip)
 
   However using this and revisiting the BRAM generator + controller capture this
   could be a good way to test everything is working
@@ -47,7 +50,7 @@ seperate_stream ss_inst (//no clk -- combinational circuit
   .m_axis_x1(m_axis_x1)
 );
 
-axis_vip #(
+parallel_axis_vip #(
   //.dtype(cx_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) x2_vip (
@@ -57,7 +60,7 @@ axis_vip #(
   .full(full[1])
 );
 
-axis_vip #(
+parallel_axis_vip #(
   //.dtype(cx_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) x1_vip (

@@ -1,4 +1,4 @@
-import alpaca_ospfb_constants_pkg::*;
+import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
 interface axis #(parameter WIDTH) ();
@@ -34,28 +34,16 @@ endinterface
 import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
-interface alpaca_axis #(parameter type dtype=cx_pkt_t, parameter TUSER=8) ();
-  dtype tdata;
-  logic tvalid, tready, tlast;
-  logic [TUSER-1:0] tuser;
+//interface alpaca_axis #(parameter type dtype=cx_pkt_t, parameter TUSER=8) ();
+//  dtype tdata;
+//  logic tvalid, tready, tlast;
+//  logic [TUSER-1:0] tuser;
+//
+//  modport MST (input tready, output tdata, tvalid, tlast, tuser);
+//  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
+//endinterface
 
-  modport MST (input tready, output tdata, tvalid, tlast, tuser);
-  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
-endinterface
-
-interface alpaca_xfft_data_axis #(
-  parameter type dtype = cx_t,
-  parameter int TUSER=8
-) ();
-  dtype tdata;
-  logic tvalid, tready, tlast;
-  logic [TUSER-1:0] tuser;
-
-  modport MST (input tready, output tdata, tvalid, tlast, tuser);
-  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
-
-endinterface : alpaca_xfft_data_axis
-
+// Xilinx fft interfaces
 interface alpaca_xfft_status_axis #(parameter type dtype = logic [FFT_STAT_WID-1:0]) ();
   dtype tdata;
   logic tvalid;
@@ -70,6 +58,24 @@ interface alpaca_xfft_config_axis #(parameter type dtype = logic [FFT_CONF_WID-1
   modport MST (input tready, output tdata, tvalid);
   modport SLV (input tdata, tvalid, output tready);
 endinterface : alpaca_xfft_config_axis
+
+interface alpaca_xfft_data_axis #(
+  parameter type dtype = cx_t,
+  parameter int TUSER=8
+) ();
+  dtype tdata;
+  logic tvalid, tready, tlast;
+  logic [TUSER-1:0] tuser;
+
+  modport MST (input tready, output tdata, tvalid, tlast, tuser);
+  modport SLV (input tdata, tvalid, tlast, tuser, output tready);
+
+endinterface : alpaca_xfft_data_axis
+
+// parallel sample (and single) capable interface
+// note: if working inside system verilog this works OK even with SAMP_PER_CLK=1 but when
+// interfacing to a VHDL/Verilog instance this won't work well you have to access the 0th
+// element of the data field (e.g., s_axis.tdata[0]) to get the conversion to work
 
 interface alpaca_data_pkt_axis #(
   parameter type dtype = cx_t,
