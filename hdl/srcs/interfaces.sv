@@ -96,4 +96,10 @@ interface alpaca_data_pkt_axis #(
   modport MST (input tready, output tdata, tvalid, tlast, tuser);
   modport SLV (input tdata, tvalid, tlast, tuser, output tready);
 
+  function string print();
+    automatic string s = $psprintf("{tvalid: 0b%s, tready:0b%s, tdata:0x%s}",
+                                    "%0b", "%0b", "%0p");
+    return $psprintf(s, tvalid, tready, tdata);
+  endfunction
+
 endinterface : alpaca_data_pkt_axis

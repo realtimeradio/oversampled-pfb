@@ -2,24 +2,22 @@
 `default_nettype none
 
 module xpm_delaybuf #(
-  parameter WIDTH=16,
   parameter FIFO_DEPTH=64,
-  parameter TUSER_WIDTH=1,
+  parameter TUSER=1,
   parameter MEM_TYPE="auto"
 ) (
   input wire logic clk,
   input wire logic rst,
 
-  axis.SLV s_axis,
-  input wire logic s_axis_tuser,
-
-  axis.MST m_axis,
-  output logic m_axis_tuser
+  alpaca_data_pkt_axis.SLV s_axis,
+  alpaca_data_pkt_axis.MST m_axis
 );
 
-axis #(.WIDTH(WIDTH)) s_axis_delaybuf();
-axis #(.WIDTH(WIDTH)) m_axis_delaybuf();
-logic s_axis_delaybuf_tuser, m_axis_delaybuf_tuser;
+typedef s_axis.data_pkt_t data_pkt_t;
+localparam width = $bits(data_pkt_t);
+
+alpaca_data_pkt_axis #(.TUSER(TUSER)) s_axis_delaybuf();
+alpaca_data_pkt_axis #(.TUSER(TUSER)) m_axis_delaybuf();
 
 logic [$clog2(FIFO_DEPTH):0] rd_data_count;
 logic almost_full;
@@ -36,7 +34,7 @@ always_comb begin
   // module m_axis bus
   m_axis.tdata = '0;//32'hda7a_f1f0; // data_fifo - garbage
   m_axis.tvalid = 1'b0;
-  m_axis_tuser = 1'b0;
+  m_axis.tuser = 1'b0;
 
   // module s_axis bus to delaybuf fifo
   s_axis.tready = s_axis_delaybuf.tready;
@@ -44,7 +42,7 @@ always_comb begin
 
   s_axis_delaybuf.tvalid = s_axis.tvalid;
   s_axis_delaybuf.tdata = new_sample ? s_axis.tdata : '0;//32'hf1f0_da7a;
-  s_axis_delaybuf_tuser = new_sample ? s_axis_tuser : 1'bx;
+  s_axis_delaybuf.tuser = new_sample ? s_axis.tuser : 1'bx;
 
   // m_axis bus to delaybuf fifo
   m_axis_delaybuf.tready = 1'b0;
@@ -68,7 +66,7 @@ always_comb begin
           m_axis_delaybuf.tready = m_axis.tready;
           m_axis.tvalid = m_axis_delaybuf.tvalid;
           m_axis.tdata = m_axis_delaybuf.tdata;
-          m_axis_tuser = m_axis_delaybuf_tuser;
+          m_axis.tuser = m_axis_delaybuf.tuser;
         end else begin
           ns = WAIT_FILLED;
         end
@@ -79,7 +77,7 @@ always_comb begin
         m_axis_delaybuf.tready = m_axis.tready;
         m_axis.tvalid = m_axis_delaybuf.tvalid;
         m_axis.tdata = m_axis_delaybuf.tdata;
-        m_axis_tuser = m_axis_delaybuf_tuser;
+        m_axis.tuser = m_axis_delaybuf.tuser;
       end
     endcase
   end
@@ -91,8 +89,8 @@ xpm_fifo_axis #(
   .FIFO_MEMORY_TYPE(MEM_TYPE),
   .RD_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)+1),
   .SIM_ASSERT_CHK(0),
-  .TDATA_WIDTH(WIDTH),
-  .TUSER_WIDTH(TUSER_WIDTH),
+  .TDATA_WIDTH(width),
+  .TUSER_WIDTH(TUSER),
   .USE_ADV_FEATURES("140C"),
   .WR_DATA_COUNT_WIDTH($clog2(FIFO_DEPTH)+1)
 ) delaybuf (
@@ -108,7 +106,7 @@ xpm_fifo_axis #(
   .m_axis_tkeep(),
   .m_axis_tlast(),
   .m_axis_tstrb(),
-  .m_axis_tuser(m_axis_delaybuf_tuser), // vout
+  .m_axis_tuser(m_axis_delaybuf.tuser), // vout
   .m_axis_tvalid(m_axis_delaybuf.tvalid),
 
   .prog_empty_axis(),
@@ -137,7 +135,7 @@ xpm_fifo_axis #(
   .s_axis_tkeep('0),
   .s_axis_tlast(1'b0),
   .s_axis_tstrb('0),
-  .s_axis_tuser(s_axis_delaybuf_tuser), // vin
+  .s_axis_tuser(s_axis_delaybuf.tuser), // vin
   .s_axis_tvalid(s_axis_delaybuf.tvalid)
 );
 
