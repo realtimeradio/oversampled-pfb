@@ -12,7 +12,7 @@ typedef logic signed [WIDTH-1:0] sample_t;
 typedef logic signed [WIDTH+WIDTH:0] mac_t;
 
 interface fp_data #(
-  parameter type dtype = sample_t,
+  parameter type dtype=sample_t,
   parameter int W=WIDTH,
   parameter int F=FRAC_WIDTH
 ) ();
@@ -27,14 +27,25 @@ interface fp_data #(
   localparam DATFMT = $psprintf("%%%0d%0s",$ceil(W/4.0), "X");
   localparam FPFMT = "%f";
 
+  // interface signals
   dtype data;
 
+  // modports
   modport I (input data);
   modport O (output data);
 
-  function string print();
+  // convenience functions for testbench
+
+  // return bits and scaled fixed-point interpretation of the data
+  function string print_all();
     automatic string s = $psprintf("{data: 0x%s, fp:%s}", DATFMT, FPFMT);
     return $psprintf(s, data, $itor(data)*lsb_scale);
+  endfunction
+
+  // return fixed-point interpretation of the data
+  function string print_data_fp();
+    automatic string s = $psprintf("%s", FPFMT);
+    return $psprintf(s, $itor(data)*lsb_scale);
   endfunction
 
 endinterface : fp_data
@@ -207,7 +218,7 @@ initial begin
   for (int i=0; i < END; i++) begin
     wait_cycles();
     //$display("{dout bits: 0x%8X}, fp: %f", dout.data, $itor(dout.data)*lsb_scale);
-    $display(dout.print());
+    $display(dout.print_all());
     $display("{expected: 0x%9X}, fp: %f", $rtoi(expected/lsb_scale), expected);
     
     @(negedge clk);

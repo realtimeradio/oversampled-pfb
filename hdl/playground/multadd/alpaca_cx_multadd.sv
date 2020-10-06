@@ -17,7 +17,7 @@ typedef logic signed [PHASE_WIDTH-1:0] phase_t;
 typedef logic signed [WIDTH+PHASE_WIDTH:0] mac_t;
 
 interface fp_data #(
-  parameter type dtype = sample_t,
+  parameter type dtype=sample_t,
   parameter int W=WIDTH,
   parameter int F=FRAC_WIDTH
 ) ();
