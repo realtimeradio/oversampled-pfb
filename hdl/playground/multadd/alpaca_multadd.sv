@@ -101,12 +101,12 @@ module alpaca_multadd_top (
   input wire phase_t  b,
   input wire sample_t c,
 
-  output mac_t d
+  output phase_mac_t d
 );
 
 fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) a_in(), c_in();
 fp_data #(.dtype(phase_t), .W(PHASE_WIDTH), .F(PHASE_FRAC_WIDTH)) b_in();
-fp_data #(.dtype(mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) dout();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) dout();
 
 assign a_in.data = a;
 assign b_in.data = b;

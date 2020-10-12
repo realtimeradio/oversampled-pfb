@@ -19,7 +19,7 @@ module multadd_tb();
 logic clk, rst;
 
 fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) a_in(), b_in(), c_in();
-fp_data #(.dtype(mac_t), .W(WIDTH*2+1), .F(FRAC_WIDTH*2)) dout();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH*2+1), .F(FRAC_WIDTH*2)) dout();
 
 clk_generator #(.PERIOD(PERIOD)) clk_gen_int (.*);
 alpaca_multadd DUT (.*);

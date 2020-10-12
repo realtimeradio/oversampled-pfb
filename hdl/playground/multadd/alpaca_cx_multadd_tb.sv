@@ -30,8 +30,9 @@ module cx_multadd_tb();
 logic clk, rst;
 
 fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) ar_in(), ai_in(), cr_in(), ci_in();
-fp_data #(.dtype(sample_t), .W(PHASE_WIDTH), .F(PHASE_FRAC_WIDTH)) br_in(), bi_in();
-fp_data #(.dtype(mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) dout_re(), dout_im();
+fp_data #(.dtype(phase_t), .W(PHASE_WIDTH), .F(PHASE_FRAC_WIDTH)) br_in(), bi_in();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) add_dout_re(), add_dout_im();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) sub_dout_re(), sub_dout_im();
 
 clk_generator #(.PERIOD(PERIOD)) clk_gen_int (.*);
 alpaca_cx_multadd DUT (.*);
@@ -58,7 +59,8 @@ initial begin
   real tb_phase_start_val;
   tb_cx_t tmp;
   tb_cx_t a_tb, b_tb, c_tb;
-  tb_cx_t expected;
+  tb_cx_t add_expected;
+  tb_cx_t sub_expected;
 
   // this tb still doesn't get it right because the moudle will roll over but the real values
   // will not. so this is only good for a few steps.
@@ -74,18 +76,18 @@ initial begin
   ai_in.data <= start_val_im; bi_in.data <= start_val_im; ci_in.data <= start_val_im;
   @(posedge clk);
   @(negedge clk); rst = 0;
-  a_tb.re = tb_data_start_val; b_tb.re = tb_phase_start_val; c_tb.re = tb_data_start_val; expected.re = 0;
-  a_tb.im = tb_data_start_val; b_tb.im = tb_phase_start_val; c_tb.im = tb_data_start_val; expected.im = 0;
+  a_tb.re = tb_data_start_val; b_tb.re = tb_phase_start_val; c_tb.re = tb_data_start_val; add_expected.re = 0; sub_expected.re = 0;
+  a_tb.im = tb_data_start_val; b_tb.im = tb_phase_start_val; c_tb.im = tb_data_start_val; add_expected.im = 0; sub_expected.im = 0;
 
   for (int i=0; i<DUT_LAT; i++) begin
     wait_cycles();
-    if (dout_re.data != expected.re | dout_re.data === 'x) begin
+    if (add_dout_re.data != add_expected.re | add_dout_re.data === 'x) begin
       errors++;
-      $display("%sT=%4d: {expected: 0x%0X, observed: 0x%0X}%s",
-                RED, simcycles, expected.re, dout_re.data, RST);
+      $display("%sT=%4d: {add_expected: 0x%0X, observed: 0x%0X}%s",
+                RED, simcycles, add_expected.re, add_dout_re.data, RST);
     end else begin
-      $display("%sT=%4d: {expected: 0x%0X, observed: 0x%0X}%s",
-                GRN, simcycles, expected.re, dout_re.data, RST);
+      $display("%sT=%4d: {add_expected: 0x%0X, observed: 0x%0X}%s",
+                GRN, simcycles, add_expected.re, add_dout_re.data, RST);
     end
 
     @(negedge clk);
@@ -95,12 +97,17 @@ initial begin
   end
 
   tmp = cx_mult(a_tb.re, a_tb.im, b_tb.re, b_tb.im);
-  expected.re = tmp.re + c_tb.re;
-  expected.im = tmp.im + c_tb.im;
+  add_expected.re = tmp.re + c_tb.re;
+  add_expected.im = tmp.im + c_tb.im;
+  sub_expected.re = tmp.re - c_tb.re;
+  sub_expected.im = tmp.im - c_tb.im;
+
   for (int i=0; i < END; i++) begin
     wait_cycles();
-    $display({$psprintf("T=%4d", simcycles), ": testbench: {real: ", dout_re.print_data_fp(), ", imag: ", dout_im.print_data_fp()}, "}");
-    $display( "T=%4d: expected:  {real: %f, imag: %f}\n", simcycles, expected.re, expected.im);
+    $display({$psprintf("T=%4d", simcycles), ": add testbench: {real: ", add_dout_re.print_data_fp(), ", imag: ", add_dout_im.print_data_fp()}, "}");
+    $display( "T=%4d: add expected:  {real: %f, imag: %f}\n", simcycles, add_expected.re, add_expected.im);
+    $display({$psprintf("T=%4d", simcycles), ": sub testbench: {real: ", sub_dout_re.print_data_fp(), ", imag: ", sub_dout_im.print_data_fp()}, "}");
+    $display( "T=%4d: sub expected:  {real: %f, imag: %f}\n", simcycles, sub_expected.re, sub_expected.im);
     //0x%9X , $rtoi(expected.re/lsb_scale)
     @(negedge clk);
     ar_in.data += 1; br_in.data+=1; cr_in.data+=1;
@@ -109,8 +116,11 @@ initial begin
     a_tb.im += tb_data_start_val; b_tb.im+=tb_phase_start_val; c_tb.im+=tb_data_start_val;
 
     tmp = cx_mult(a_tb.re, a_tb.im, b_tb.re, b_tb.im);
-    expected.re = tmp.re + c_tb.re;
-    expected.im = tmp.im + c_tb.im;
+    add_expected.re = tmp.re + c_tb.re;
+    add_expected.im = tmp.im + c_tb.im;
+    sub_expected.re = tmp.re - c_tb.re;
+    sub_expected.im = tmp.im - c_tb.im;
+
   end
 
   $display("*** Simulation complete: Errors=%4d ***", errors);

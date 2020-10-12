@@ -18,7 +18,8 @@ module alpaca_cx_multadd (
   fp_data.I br_in, bi_in,
   fp_data.I cr_in, ci_in,
 
-  fp_data.O dout_re, dout_im
+  fp_data.O add_dout_re, add_dout_im,
+  fp_data.O sub_dout_re, sub_dout_im
 );
 
 // gather fixed point parameters to perform and check calculation widths
@@ -26,7 +27,7 @@ typedef ar_in.data_t a_data_t;
 typedef br_in.data_t b_data_t;
 typedef cr_in.data_t c_data_t;
 
-typedef dout_re.data_t result_t; 
+typedef add_dout_re.data_t result_t; 
 
 localparam aw = ar_in.w;
 localparam af = ar_in.f;
@@ -37,8 +38,8 @@ localparam bf = br_in.f;
 localparam cw = cr_in.w;
 localparam cf = cr_in.f;
 
-localparam doutw = dout_re.w;
-localparam doutf = dout_re.f;
+localparam doutw = add_dout_re.w;
+localparam doutf = add_dout_re.f;
 
 localparam mult_result_w = aw + bw;
 localparam mult_result_f = af + bf;
@@ -61,6 +62,11 @@ localparam A_LAT = 4;
 localparam B_LAT = A_LAT-1;
 localparam C_LAT = A_LAT+1;
 
+// Is the following still true?
+// vivado synthesis comes back and says that this will most likely be implemented in registers
+// because the abstract data type recognition is not supported. Registers are what I want and
+// this is OK. But were I to change to `logic signed [X1_LAT-1:0][$bits(cx_t)-1:0] x1_delay;` I
+// would then not be able to pull out the real and imaginary part with .re/.im struct notation.
 a_data_t [A_LAT-1:0] ar_delay, ai_delay;
 b_data_t [B_LAT-1:0] br_delay, bi_delay;
 c_data_t [C_LAT-1:0] cr_delay, ci_delay;
@@ -76,6 +82,7 @@ result_t c_re, c_im;
 
 result_t cxmult_re, cxmult_im;
 result_t multadd_re, multadd_im;
+result_t multsub_re, multsub_im;
 
 // generate common factor for 3 dsp slice implementation
 always_ff @(posedge clk) begin
@@ -115,6 +122,7 @@ always_ff @(posedge clk) begin
     c_re <= (cr_delay[C_LAT-1] <<< ALIGN_BP); // align binary point for addition
 
     multadd_re <= cxmult_re + c_re;
+    multsub_re <= cxmult_re - c_re;
   end
 end
 
@@ -143,11 +151,15 @@ always_ff @(posedge clk) begin
     c_im <= (ci_delay[C_LAT-1] <<< ALIGN_BP); // align binary point for addition
 
     multadd_im <= cxmult_im + c_im;
+    multsub_im <= cxmult_im - c_im;
   end
 end
 
-assign dout_re.data = multadd_re;
-assign dout_im.data = multadd_im;
+assign add_dout_re.data = multadd_re;
+assign add_dout_im.data = multadd_im;
+assign sub_dout_re.data = multsub_re;
+assign sub_dout_im.data = multsub_im;
+
 
 endmodule : alpaca_cx_multadd
 
@@ -162,12 +174,14 @@ module alpaca_cx_multadd_top (
   input wire phase_t  br, bi,
   input wire sample_t cr, ci,
 
-  output mac_t re, im
+  output phase_mac_t add_re, add_im,
+  output phase_mac_t sub_re, sub_im
 );
 
 fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) ar_in(), ai_in(), cr_in(), ci_in();
 fp_data #(.dtype(phase_t), .W(PHASE_WIDTH), .F(PHASE_FRAC_WIDTH)) br_in(), bi_in();
-fp_data #(.dtype(mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) dout_re(), dout_im();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) add_dout_re(), add_dout_im();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) sub_dout_re(), sub_dout_im();
 
 assign ar_in.data = ar;
 assign ai_in.data = ai;
@@ -176,8 +190,11 @@ assign bi_in.data = bi;
 assign cr_in.data = cr;
 assign ci_in.data = ci;
 
-assign re = dout_re.data;
-assign im = dout_im.data;
+assign add_re = add_dout_re.data;
+assign add_im = add_dout_im.data;
+assign sub_re = sub_dout_re.data;
+assign sub_im = sub_dout_im.data;
+
 
 alpaca_cx_multadd DUT (.*);
 

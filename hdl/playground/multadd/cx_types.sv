@@ -6,16 +6,16 @@
 **********************************/
 
 package cx_types_pkg;
-  parameter int WIDTH = 16;
-  parameter int FRAC_WIDTH = WIDTH-1;
+  parameter int WIDTH = 8;
+  parameter int FRAC_WIDTH = 0;//WIDTH-1;
 
-  parameter int PHASE_WIDTH = 23;
+  parameter int PHASE_WIDTH = 15;
   parameter int PHASE_FRAC_WIDTH = PHASE_WIDTH-1;
 
   typedef logic signed [WIDTH-1:0] sample_t;
   typedef logic signed [PHASE_WIDTH-1:0] phase_t;
 
-  typedef logic signed [WIDTH+PHASE_WIDTH:0] mac_t;
+  typedef logic signed [WIDTH+PHASE_WIDTH:0] phase_mac_t;
 
   // simualtion parameters
   // display constants
