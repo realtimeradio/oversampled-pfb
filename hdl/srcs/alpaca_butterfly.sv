@@ -1,12 +1,11 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+import alpaca_constants_pkg::*; // if I import this here I don't need the module params(twiddle file,fftlen)
 import alpaca_dtypes_pkg::*;
 
 module alpaca_butterfly #(
   parameter int FFT_LEN=16,
-  //parameter int WIDTH=16,
-  //parameter int PHASE_WIDTH=23,
   parameter TWIDDLE_FILE=""
 ) (
   input wire logic clk,
@@ -15,31 +14,21 @@ module alpaca_butterfly #(
   alpaca_xfft_data_axis.SLV x2,
 
   alpaca_data_pkt_axis.MST Xk
-  // mst tready not implemented, assuming downstream can accept
-  // possible error check is to create an output put and have
+  // mst tready not implemented
+  // possible idea for an error check is to create an output and have
   // that driven by when the mst is valid and the mst (slv) not ready
 );
 
-logic signed [$bits(wk_t)-1:0] twiddle [FFT_LEN/2];
-wk_t Wk;
-
-arith_t WkX2, Xkhi, Xklo;
-
-localparam phase_width = $bits(Wk.re);
-
-localparam width = $bits(sample_t);
+//logic signed [$bits(wk_t)-1:0] twiddle [FFT_LEN/2];
+wk_t twiddle [FFT_LEN/2];
+logic [$clog2(FFT_LEN/2)-1:0] ctr;
 
 initial begin
   $readmemh(TWIDDLE_FILE, twiddle);
-  //for (int i=0; i < FFT_LEN/2; i++) begin
-  //  wk_t tmp;
-  //  tmp.re = i;
-  //  tmp.im = i;
-  //  twiddle[i] = tmp;
-  //end
 end
 
-logic [$clog2(FFT_LEN/2)-1:0] ctr;
+wk_t Wk;
+cx_phase_mac_t Xkhi, Xklo;
 
 always_ff @(posedge clk)
   if (rst)
@@ -54,10 +43,10 @@ assign Wk = twiddle[ctr];
 // but so we may need to add more for better fclk. Also may want to add more to clock the
 // twiddle factor out.
 // cmult latency + final add/sub (may need more, see above note)
-localparam AXIS_LAT = 7;
+localparam AXIS_LAT = 7; // Does this need to increase by one?
 localparam X1_LAT = AXIS_LAT-1;
 logic [AXIS_LAT-1:0][1:0] axis_delay; // {tvalid, tlast}
-// not sure if this is the best way to get the user width here...
+
 logic [AXIS_LAT-1:0][$bits(Xk.tuser)-1:0] axis_tuser_delay; // concatenate x1/x2 tuser as {x1,x2}
 
 // opting for x2 last/valid propagation
@@ -66,15 +55,32 @@ always_ff @(posedge clk) begin
   axis_tuser_delay <= {axis_tuser_delay[AXIS_LAT-2:0] , {x1.tuser, x2.tuser}};
 end
 
-// vivado synthesis comes back and says that this will most likely be implemented in registers
-// because the abstract data type recognition is not supported. Registers are what I want and
-// this is OK. But were I to change to `logic signed [X1_LAT-1:0][$bits(cx_t)-1:0] x1_delay;` I
-// would then not be able to pull out the real and imaginary part with .re/.im struct notation.
-cx_t [X1_LAT-1:0] x1_delay;
+// unfortunate that all of this work to have "scalable" interfaces but still have to have the
+// parameters here. More work would need to be done to figure out how to get them here because
+// the AXI interface cant have another interface so we would need to also incorporate this in
+// the AXI or some other way
+fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) ar_in(), ai_in(), cr_in(), ci_in();
+fp_data #(.dtype(phase_t), .W(PHASE_WIDTH), .F(PHASE_FRAC_WIDTH)) br_in(), bi_in();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) add_dout_re(), add_dout_im();
+fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) sub_dout_re(), sub_dout_im();
+localparam wid = $bits(phase_mac_t);
 
-always_ff @(posedge clk)
-  x1_delay <= {x1_delay[X1_LAT-2:0], x1.tdata};
+assign ar_in.data = x2.tdata.re;
+assign ai_in.data = x2.tdata.im;
+assign br_in.data = Wk.re;
+assign bi_in.data = Wk.im;
+assign cr_in.data = x1.tdata.re;
+assign ci_in.data = x1.tdata.im;
 
+assign Xklo.re = add_dout_re.data;
+assign Xklo.im = add_dout_im.data;
+assign Xkhi.re = sub_dout_re.data;
+assign Xkhi.im = sub_dout_im.data;
+
+alpaca_cx_multadd cmult_inst (.*);
+
+assign Xk.tdata = {Xkhi, Xklo}; //may need to do another one register for dsp slice clock efficiency?
+//assign Xk.tdata = {Xkhi[wid-1:wid-16], Xklo[wid-1:wid-16]}; //may need to do another one register for dsp slice clock efficiency?
 assign Xk.tvalid = axis_delay[AXIS_LAT-1][1];
 assign Xk.tlast = axis_delay[AXIS_LAT-1][0];
 assign Xk.tuser = axis_tuser_delay[AXIS_LAT-1];
@@ -82,28 +88,5 @@ assign Xk.tuser = axis_tuser_delay[AXIS_LAT-1];
 assign x1.tready = ~rst;
 assign x2.tready = ~rst;
 
-cmult #(
-  .AWIDTH(width),
-  .BWIDTH(phase_width)
-) DUT (
-  .clk(clk),
-  .ar(x2.tdata.re),
-  .ai(x2.tdata.im),
-  .br(Wk.re),
-  .bi(Wk.im),
-  .pr(WkX2.re),
-  .pi(WkX2.im)
-);
-
-// the delay is showing computation one cycle later in simulation but may need
-// to do another one for dsp slice clock efficiency?
-always_ff @(posedge clk) begin
-  Xkhi.re <= x1_delay[X1_LAT-1].re - WkX2.re;
-  Xkhi.im <= x1_delay[X1_LAT-1].im - WkX2.im;
-  Xklo.re <= x1_delay[X1_LAT-1].re + WkX2.re;
-  Xklo.im <= x1_delay[X1_LAT-1].im + WkX2.im;
-end
-
-assign Xk.tdata = {Xkhi, Xklo};
 
 endmodule : alpaca_butterfly

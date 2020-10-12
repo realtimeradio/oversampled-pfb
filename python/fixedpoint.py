@@ -85,6 +85,7 @@ def ovflow(a, b, w):
 
 def tofracfixed(a, w, f):
   """
+    a: integer, w: length of binary word, f: number of fractional bits
     convert binary  (or the int that results from bin(v) to the fractional fixed point representation
   """
   v = 0

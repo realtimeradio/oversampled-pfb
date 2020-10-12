@@ -1,6 +1,8 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+import alpaca_dtypes_pkg::*;
+
 module xpm_ospfb_ctr_top #(
   // data width
   parameter int WIDTH=16,

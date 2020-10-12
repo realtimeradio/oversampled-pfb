@@ -11,19 +11,15 @@ module parallel_xfft #(
 ) (
   input wire logic clk,
   input wire logic rst,
-
+  // data
   alpaca_data_pkt_axis.SLV s_axis,
+  alpaca_data_pkt_axis.MST m_axis_Xk,
+  // configuration
   alpaca_xfft_config_axis.SLV s_axis_config_x2,
   alpaca_xfft_config_axis.SLV s_axis_config_x1,
-
-  //alpaca_axis.MST m_axis_fft_x2,
-  //alpaca_axis.MST m_axis_fft_x1,
-
+  // status
   alpaca_xfft_status_axis.MST m_axis_fft_status_x2,
   alpaca_xfft_status_axis.MST m_axis_fft_status_x1,
-
-  alpaca_data_pkt_axis.MST m_axis_Xk,
-
   output logic [1:0] event_frame_started,
   output logic [1:0] event_tlast_unexpected,
   output logic [1:0] event_tlast_missing,
@@ -98,15 +94,15 @@ module seperate_stream
 (
   alpaca_data_pkt_axis.SLV s_axis,
 
-  alpaca_xfft_data_axis.MST m_axis_x2, // hi, newest (odd sample, time idx)
-  alpaca_xfft_data_axis.MST m_axis_x1  // lo, oldest (even sample, time idx)
+  alpaca_xfft_data_axis.MST m_axis_x2, // (odd sample time idx)
+  alpaca_xfft_data_axis.MST m_axis_x1  // (even sample time idx)
 );
 
   // just an AXIS passthrough, re-wire
   assign s_axis.tready = (m_axis_x2.tready & m_axis_x1.tready);
 
-  assign m_axis_x2.tdata = s_axis.tdata[1];
-  assign m_axis_x1.tdata = s_axis.tdata[0];
+  assign m_axis_x2.tdata = s_axis.tdata[0];//[1];
+  assign m_axis_x1.tdata = s_axis.tdata[1];//[0];
 
   assign m_axis_x2.tvalid = s_axis.tvalid;
   assign m_axis_x1.tvalid = s_axis.tvalid;

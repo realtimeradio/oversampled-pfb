@@ -1,22 +1,27 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+import alpaca_dtypes_pkg::*;
+
+// when converting to parallel samples per clock the ability to do real samples only was removed
+// for simplicity as sto just have something that worked. It would be possible to add that back
+// if needed.
+
 module adc_model #(
-  parameter real PERIOD = 10,
-  parameter string DTYPE = "CX",      // real or complex valued
-  parameter real F_SOI_NORM = 0.27,   // normalized frequency to generate SOI, [0 <= fnorm < 1]
-  parameter real VCM = 1.27,          // Voltage common mode [V]
-  parameter real FSV = 1.00,          // Full-scale voltage  [V]
-  parameter real GAIN = 1.0,
-  parameter int BITS = 12,
-  parameter int TWID = 16
+  parameter real PERIOD=10,
+  parameter string DTYPE="CX",      // real or complex valued
+  parameter real F_SOI_NORM=0.27,   // normalized frequency to generate SOI, [0 <= fnorm < 1]
+  parameter real VCM=1.27,          // Voltage common mode [V]
+  parameter real FSV=1.00,          // Full-scale voltage  [V]
+  parameter real GAIN=1.0,
+  parameter int BITS=12
 ) (
   input wire logic clk,
   input wire rst,
-  // en isn't used except to be annoying I think it was added in testing the fft but never removed
   input wire en,
-  axis.MST m_axis
+  alpaca_data_pkt_axis.MST m_axis
 );
+  localparam int samp_per_clk = m_axis.samp_per_clk;
 
   localparam real PI = 3.14159265358979323846264338327950288;
   localparam real VPK = FSV/2;                   // peak voltage
@@ -24,123 +29,136 @@ module adc_model #(
   localparam real adc_scale = FSV/(2**(BITS-1)); // [volts / bit]
   localparam real bit_width = (2**BITS)/2;       // half bits range
 
-  localparam real F_SAMP = 1/PERIOD;
+  localparam real ADC_PERIOD = PERIOD/samp_per_clk;
+  localparam real F_SAMP = 1/ADC_PERIOD;
   localparam real argf = 2.0*PI*(F_SOI_NORM*F_SAMP);
 
-  real vi;
-  real tmpscale;
-  integer tmp;
+  real vi [samp_per_clk-1:0];
+  real tmpscale [samp_per_clk-1:0];
+  integer tmp [samp_per_clk-1:0];
 
-  logic signed [TWID-1:0] dout;
+  real vq [samp_per_clk-1:0];
+  real tmpscale_q [samp_per_clk-1:0];
+  integer tmp_q [samp_per_clk-1:0];
 
-  always_ff @(posedge clk)
-      vi <= GAIN*$cos(argf*$time);
+  // QUESTA SIM BUG
+  //typedef m_axis.data_pkt_t data_pkt_t;
+  //data_pkt_t dout;
+  //assign dout[0][15:0] = 16'hbeef;
+  //assign dout[0][31:16] = 16'hdead;
+  //assign dout[1].re = 16'hbeef;
+  //assign dout[1].im = 16'hdead;
 
-  always_comb begin
-    //tmp = $realtobits(v-bit_width)*(in_scale_lsb);
-    tmpscale = vi/adc_scale;
-    tmp = $rtoi(vi/adc_scale);
-    dout = tmp;//{{(TWID-BITS){1'b0}}, tmp[63:(63-BITS+1)]};
-    // TODO: need to round...?
+  genvar ii;
+  generate
+  for (ii=0; ii<samp_per_clk; ii++) begin
+    always_ff @(posedge clk) begin
+      vi[ii] <= GAIN*$cos(argf*($time+(ADC_PERIOD*ii)));
+      vq[ii] <= GAIN*$sin(argf*($time+(ADC_PERIOD*ii)));
+    end
   end
 
-generate
-  if (DTYPE == "CX") begin
-    real vq;
-    real tmpscale_q;
-    integer tmp_q;
-
-    logic signed [TWID-1:0] dout_q;
-
-    always_ff @(posedge clk)
-        vq <= GAIN*$sin(argf*$time);
-
+  for (ii=0; ii<samp_per_clk; ii++) begin
     always_comb begin
+      //tmp = $realtobits(v-bit_width)*(in_scale_lsb);
+      tmpscale[ii] = vi[ii]/adc_scale;
+      tmp[ii] = $rtoi(vi[ii]/adc_scale);
+      m_axis.tdata[ii].re = tmp[ii];
+      // TODO: need to round...?
+
       //tmp = $realtobits(vq-bit_width)*(in_scale_lsb);
-      tmpscale_q = vq/adc_scale;
-      tmp_q = $rtoi(vq/adc_scale);
-      dout_q = tmp_q;//{{(TWID-BITS){1'b0}}, tmp[63:(63-BITS+1)]};
+      tmpscale_q[ii] = vq[ii]/adc_scale;
+      tmp_q[ii] = $rtoi(vq[ii]/adc_scale);
+      m_axis.tdata[ii].im = tmp_q[ii];
       // TODO: need to round...?
     end
-
-    assign m_axis.tdata = {dout_q, dout};
-
-  end else begin
-    assign m_axis.tdata = dout;
-
   end
-endgenerate
+  endgenerate
 
-    assign m_axis.tvalid = ~rst & en;
+  //assign m_axis.tdata = dout;
+  assign m_axis.tvalid = ~rst & en;
 endmodule
 
-/*
+/**************************************************
+  TOP
+***************************************************/
+
+module adc_top #(
+  parameter int PERIOD=10,
+  parameter int SAMP_PER_CLK=2,
+  parameter int SAMPLES=128,
+  parameter int BITS=8,
+  parameter real F_SOI_NORM=0.27
+) (
+  input wire logic clk,
+  input wire logic rst,
+  input wire logic en,
+  output wire vip_full
+);
+
+  localparam MEM_DEPTH = SAMPLES/SAMP_PER_CLK;
+
+  alpaca_data_pkt_axis #(
+    .dtype(cx_t),
+    .SAMP_PER_CLK(SAMP_PER_CLK),
+    .TUSER(1)
+  ) m_axis();
+
+  adc_model #(.PERIOD(PERIOD), .BITS(BITS), .F_SOI_NORM(F_SOI_NORM)) adc_inst (.*);
+
+  parallel_axis_vip #(.DEPTH(MEM_DEPTH)) vip_inst (.*, .s_axis(m_axis), .full(vip_full));
+
+endmodule : adc_top
+
+/**************************************************
   ADC model test bench
-*/
-parameter PERIOD = 10;
-parameter TDATA = 16;
+***************************************************/
+parameter int PERIOD = 10;
+parameter int ADC_BITS = 8;
+parameter real F_SOI_NORM=0.08;//0.27;
+parameter int SAMP_PER_CLK = 2;
+parameter int SAMPLES = 128;
 
-module adc_test;
+module adc_test();
 
-logic clk, rst, en;
+  localparam real ADC_PERIOD = PERIOD/SAMP_PER_CLK;
 
-axis #(.WIDTH(2*TDATA)) mst();
+  logic clk, rst, en;
+  logic vip_full;
 
-adc_model #(
-  .PERIOD(PERIOD),
-  .TWID(TDATA),
-  .DTYPE("CX")
-) DUT (.clk(clk), .rst(rst), .en(en), .m_axis(mst));
+  clk_generator #(.PERIOD(PERIOD)) clk_gen_inst (.*);
 
-initial begin
-  clk <= 0;
-  forever #(PERIOD/2)
-    clk = ~clk;
-end
+  adc_top #(
+    .PERIOD(PERIOD),
+    .SAMP_PER_CLK(SAMP_PER_CLK),
+    .SAMPLES(SAMPLES),
+    .BITS(ADC_BITS),
+    .F_SOI_NORM(F_SOI_NORM)
+  ) DUT (.*);
 
-task wait_cycles(input int cycles);
-  repeat(cycles)
+  task wait_cycles(input int cycles);
+    repeat(cycles)
+      @(posedge clk);
+  endtask
+
+  // main
+  initial begin
+
+    rst <= 1;
     @(posedge clk);
-endtask
+    @(negedge clk); rst = 0; en = 1;
 
-parameter SAMPLES = 128;
+    while (~vip_full)
+      wait_cycles(1);
 
-initial begin
-  // create file to dump data
-  int fp;
-  logic signed [2*TDATA-1:0] samps [SAMPLES];
+    // write capture contents for processing
+    //$writememh("adc_capture_hex.txt", DUT.vip_inst.ram);
+    $writememb("adc_capture_bin.txt", DUT.vip_inst.ram);
 
-  fp = $fopen("adc_data.bin", "wb");
-  if (!fp) begin
-    $display("could not create file...");
     $finish;
   end
 
-  rst <= 1;
-  @(posedge clk);
-  @(negedge clk); rst = 0; mst.tready = 1; en = 1;
-
-  for (int i=0; i < SAMPLES; i++) begin
-    wait_cycles(1);
-    $display(mst.print());
-    samps[i] = mst.tdata;
-  end
-
-  // write formatted binary
-  for (int i=0; i < SAMPLES; i++) begin
-    //$display("%0d, %0d", samps[i][31:16], samps[i][15:0]);
-    //$fwrite(fp, "%c%c", samps[i][15:8], samps[i][7:0]);
-    $fwrite(fp, "%u", samps[i]); // writes 4 bytes in native endian format
-  end
-
-  // write as a memory file
-  //$writememh("adc_hex.bin", samps);
-  //$writememb("adc_bin.bin", samps);
-
-  $finish;
-end
-
-endmodule
+endmodule : adc_test
 
 
 

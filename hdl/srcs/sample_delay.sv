@@ -60,7 +60,11 @@ module sample_delay
   logic [1:0] axis_delay;
 
   always_ff @(posedge clk) begin
-    data_delay <= {s_axis.tdata, data_delay[SAMPLES-1]};
+    if (s_axis.tvalid & m_axis.tready)
+      data_delay <= {s_axis.tdata, data_delay[SAMPLES-1]};
+    else
+      data_delay <= {s_axis.tdata, '0};
+
     axis_delay <= {s_axis.tvalid, s_axis.tlast};
 
     m_axis.tdata <= data_delay[SAMPLES-2:0];
@@ -69,7 +73,7 @@ module sample_delay
     m_axis.tlast  <= axis_delay[0];
   end
 
-  assign s_axis.tready = 1'b1;
+  assign s_axis.tready = m_axis.tready;
 
   assign m_axis.tuser = '0;
 

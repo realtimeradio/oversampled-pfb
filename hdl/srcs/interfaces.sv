@@ -34,6 +34,46 @@ endinterface
 import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
+// interface for the use and interpretation of fixed-point data
+interface fp_data #(
+  parameter type dtype=sample_t,
+  parameter int W=WIDTH,
+  parameter int F=FRAC_WIDTH
+) ();
+
+  // information for derived modules
+  localparam w=W;
+  localparam f=F;
+  typedef dtype data_t;
+
+  // display parameters
+  localparam real lsb_scale = 1.0/(2**f);
+  localparam DATFMT = $psprintf("%%%0d%0s",$ceil(W/4.0), "X");
+  localparam FPFMT = "%f";
+
+  // interface signals
+  dtype data;
+
+  // modports
+  modport I (input data);
+  modport O (output data);
+
+  // convenience functions for testbench
+
+  // return bits and scaled fixed-point interpretation of the data
+  function string print_all();
+    automatic string s = $psprintf("{data: 0x%s, fp:%s}", DATFMT, FPFMT);
+    return $psprintf(s, data, $itor(data)*lsb_scale);
+  endfunction
+
+  // return fixed-point interpretation of the data
+  function string print_data_fp();
+    automatic string s = $psprintf("%s", FPFMT);
+    return $psprintf(s, $itor(data)*lsb_scale);
+  endfunction
+
+endinterface : fp_data
+
 //interface alpaca_axis #(parameter type dtype=cx_pkt_t, parameter TUSER=8) ();
 //  dtype tdata;
 //  logic tvalid, tready, tlast;
@@ -87,6 +127,7 @@ interface alpaca_data_pkt_axis #(
   // this is a real nightmare for me... I feel like this type thing is great but dragging me
   // down
   localparam samp_per_clk = SAMP_PER_CLK;
+  typedef dtype data_t; // so derived interfaces can have access...
   typedef dtype [SAMP_PER_CLK-1:0] data_pkt_t;
 
   data_pkt_t tdata;

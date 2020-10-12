@@ -1,53 +1,61 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-import alpaca_ospfb_monitor_pkg::*;
-import alpaca_ospfb_constants_pkg::*;
-import alpaca_ospfb_ramp_2048_8_coeff_pkg::*;
+import alpaca_constants_pkg::*;
+import alpaca_sim_constants_pkg::*;
+import alpaca_dtypes_pkg::*;
+import alpaca_ospfb_ramp_128_8_coeff_pkg::*;
 
-parameter int SAMP = 64;
+// impulse parameters (although not used...)
+parameter int IMPULSE_PHA = DEC_FAC+1;
+parameter int IMPULSE_VAL = 128*128;//FFT_LEN*FFT_LEN; //scaling schedule at 1/N
+
+parameter int FRAMES = 2;
+
+/***************************************************
+  Testbench
+***************************************************/
 
 module xpm_ospfb_tb();
 
 logic adc_clk, dsp_clk, rst, en;
 
-logic event_frame_started;
-logic event_tlast_unexpected;
-logic event_tlast_missing;
-logic event_fft_overflow;
-logic event_data_in_channel_halt;
+alpaca_xfft_status_axis m_axis_fft_status_x2(), m_axis_fft_status_x1();
+
+logic [1:0] event_frame_started;
+logic [1:0] event_tlast_unexpected;
+logic [1:0] event_tlast_missing;
+logic [1:0] event_fft_overflow;
+logic [1:0] event_data_in_channel_halt;
 
 logic vip_full;
 
-axis #(.WIDTH(FFT_STAT_WID)) m_axis_fft_status();
-
 // ctr data source --> dual-clock fifo --> ospfb --> axis vip
-xpm_ospfb_ctr_top #(
-  .WIDTH(WIDTH),
+// xpm_ospfb_ctr_top #(
+xpm_ospfb_impulse_top #(
+  .SAMP_PER_CLK(SAMP_PER_CLK),
   .FFT_LEN(FFT_LEN),
-  .COEFF_WID(COEFF_WID),
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
   .TAPS(TAPS),
-  .FFT_CONF_WID(FFT_CONF_WID),
-  .FFT_USER_WID(FFT_USER_WID),
-  .ORDER("natural"),
+  .TWIDDLE_FILE(TWIDDLE_FILE),
+  .IMPULSE_PHA(IMPULSE_PHA),
+  .IMPULSE_VAL(IMPULSE_VAL),
   .DC_FIFO_DEPTH(DC_FIFO_DEPTH),
-  .SAMP(SAMP)
+  .FRAMES(FRAMES)
 ) DUT (
   .s_axis_aclk(adc_clk),
   .m_axis_aclk(dsp_clk),
   .rst(rst),
   .en(en),
-  // fft signals
-  .m_axis_fft_status(m_axis_fft_status),
-
+  // fft status signals
+  .m_axis_fft_status_x2(m_axis_fft_status_x2),
+  .m_axis_fft_status_x1(m_axis_fft_status_x1),
   .event_frame_started(event_frame_started),
   .event_tlast_unexpected(event_tlast_unexpected),
   .event_tlast_missing(event_tlast_missing),
   .event_fft_overflow(event_fft_overflow),
   .event_data_in_channel_halt(event_data_in_channel_halt),
-
   // vip signal
   .vip_full(vip_full)
 );
@@ -88,27 +96,28 @@ string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
 
 initial begin
   // read in golden data
-  logic signed [WIDTH-1:0] fir_golden[];
-  logic signed [WIDTH-1:0] out_golden[];
-  logic signed [WIDTH-1:0] gin;
-  automatic int nread = 0;
+  sample_t fir_golden[];
+  sample_t out_golden[];
+  sample_t gin;
+  automatic int nread = 1; // add 1 to align the golden data (single sample/clk) data with the added sample delay block
   automatic int size = 100;
   string fname;
   int fp;
   int err;
 
-  virtual axis #(.WIDTH(2*WIDTH)) slv; // view into the data source interface
+  virtual alpaca_data_pkt_axis #(.TUSER(1)) slv; // view into the data source interface
 
   int errors;
   int x_errs;
   int gidx;
-  logic signed [WIDTH-1:0] gval;
-  logic signed [WIDTH-1:0] fir_out_re;
-  logic signed [WIDTH-1:0] fir_out_im;
-  logic signed [WIDTH-1:0] pc_out_re;
-  logic signed [WIDTH-1:0] pc_out_im;
+  fir_pkt_t gval;
+  fir_pkt_t fir_out_re;
+  fir_pkt_t fir_out_im;
+  fir_pkt_t pc_out_re;
+  fir_pkt_t pc_out_im;
 
-  fname = $psprintf("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr_%0d_%0d_%0d.dat", FFT_LEN, DEC_FAC, PTAPS); 
+  fname = $psprintf("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr_%0d_%0d_%0d.dat",
+                      FFT_LEN, DEC_FAC, PTAPS);
   fp = $fopen(fname, "rb");
   if (!fp) begin
     $display("could not open data file...");
@@ -128,7 +137,7 @@ initial begin
       out_golden = new[size](out_golden);
     end
   end
-  --nread; // subtract off the last increment
+  nread = nread-2;// subtract one due to the the last increment in the loop and another for sample delay offset
   $fclose(fp);
     
   slv = DUT.ospfb_inst.s_axis_ospfb;
@@ -146,10 +155,13 @@ initial begin
   @(posedge slv.tready);
 
   $display("Cycle=%4d: Finished init...", simcycles);
-  for (int i=0; i < nread; i++) begin // 10*FFT_LEN+1; i++) begin
+  for (int i=0; i < nread; i=i+SAMP_PER_CLK) begin
     wait_dsp_cycles(1);
-    //$display(logfmt, GRN, simcycles, rst, en, slv.tdata, mst.tdata, RST);
-    gval = out_golden[gidx++];
+    // pack single samples from golden source into a `samp_per_clk` word
+    gval = 0;
+    for (int j=0; j<SAMP_PER_CLK; j++) begin
+      gval = (out_golden[gidx++] << (SAMP_PER_CLK-1-j)*$bits(sample_t)) | gval;
+    end
     fir_out_re = (DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tready & DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tvalid) ? DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tdata : '0;
     fir_out_im = (DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tready & DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tvalid) ? DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tdata : '0;
     pc_out_re = DUT.ospfb_inst.datapath_inst.sout_re;
@@ -175,17 +187,17 @@ initial begin
      wait_dsp_cycles(1);
   end
 
-  fp = $fopen("ctr_ospfb_capture.bin", "wb");
-  if (!fp) begin
-    $display("could not create file...");
-    $finish;
-  end
+  //fp = $fopen("ctr_ospfb_capture.bin", "wb");
+  //if (!fp) begin
+  //  $display("could not create file...");
+  //  $finish;
+  //end
 
-  // write formatted binary
-  for (int i=0; i < SAMP; i++) begin
-    $fwrite(fp, "%u", DUT.vip_inst.ram[i]); // writes 4 bytes in native endian format
-  end
-  $fclose(fp);
+  //// write formatted binary
+  //for (int i=0; i < SAMP; i++) begin
+  //  $fwrite(fp, "%u", DUT.vip_inst.ram[i]); // writes 4 bytes in native endian format
+  //end
+  //$fclose(fp);
 
   $display("*** Simulation complete: Errors=%4d X_Errors=%4d***", errors, x_errs);
   // Note the x_errs is meant to catch where the output is not driven correctly because this
@@ -195,4 +207,4 @@ initial begin
   $finish;
 end
 
-endmodule
+endmodule : xpm_ospfb_tb

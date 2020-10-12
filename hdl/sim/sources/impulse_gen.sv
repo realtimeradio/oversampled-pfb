@@ -21,7 +21,7 @@ module impulse_generator6 #(
   localparam SAMP_PER_CLK = m_axis.samp_per_clk;
   localparam MEM_DEPTH = FFT_LEN/SAMP_PER_CLK;
 
-  // TODO: this still needs to be fixed for synthesis
+  // TODO: this still needs to be fixed for synthesis and does 'signed' make a difference?
   //logic signed [$bits(data_pkt_t)-1:0] ram [MEM_DEPTH];
   data_pkt_t ram [MEM_DEPTH];
 
@@ -33,7 +33,7 @@ module impulse_generator6 #(
       for (int j=0; j<SAMP_PER_CLK; j++) begin
         cx_t tmp;
         // load counter in either real, imaginary or both
-        tmp.re = i*SAMP_PER_CLK+ j;
+        //tmp.re = i*SAMP_PER_CLK+ j;
         //tmp.im = i*SAMP_PER_CLK+ j;
         // load impulse value
         tmp.re = (i*SAMP_PER_CLK+j == IMPULSE_PHA) ? IMPULSE_VAL : '0;

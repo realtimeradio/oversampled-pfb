@@ -3,7 +3,7 @@ import numpy as np
 import struct
 
 from ospfb import OSPFB, computeLatency, latencyComp
-from source import CounterSource
+from source import (CounterSource, ModCounterSource)
 
 from taps import CyclicRamp
 
@@ -22,14 +22,14 @@ if __name__=="__main__":
   fname = "golden_ctr_{}_{}_{}.dat".format(M, D, P)
   fp = open(fname, 'wb')
 
-  Tend = 4*M*P
+  Tend = 8*M*P
   SIM_DT = 'int16'
 
   taps = CyclicRamp.genTaps(M, P, D)
   ospfb = OSPFB(M=M, D=D, P=P, taps=taps, dt=SIM_DT, followHistory=False)
   ospfb.enable()
 
-  src = CounterSource(M=M, order="natural")
+  src = ModCounterSource(M=M, order="natural")
 
   din = TYPES_INIT[SIM_DT]
   for i in range(0, Tend):

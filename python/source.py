@@ -28,7 +28,15 @@ class Source(object):
 
     return dout
 
+  def genSampleArray(self, nsamps):
+    dout = self.__createSampleArray__(nsamps)
+
+    return dout
+
   def __createSample__(self):
+    pass
+
+  def __createSampleArray__(self, n):
     pass
 
 class BlueNoise(Source):
@@ -90,14 +98,14 @@ class RFDC():
     # quantize
     d = np.round(q/self.lsb_scale)
     # saturate - where() is over the top with it being one sample but poteitnally extend to an array in the future
-    d = bit_range[0] if d < self.bit_range[0] else d
-    d = bit_range[1] if d > self.bit_range[1] else d
+    d = np.where(d < self.bit_range[0], self.bit_range[0], d)
+    d = np.where(d >= self.bit_range[1], self.bit_range[1], d)
 
     return np.int16(d)
 
   def sample(self, v):
 
-    if (np.abs(v) > self.vpk):
+    if (np.max(np.abs(v)) > self.vpk):
       print("WARNING: input voltage greater than ADC can tolerate")
     
     if self.sample_mode=='cx':
@@ -151,14 +159,22 @@ class ToneGenerator(Source):
     self.vpk = self.vrms*np.sqrt(2)
     self.f_soi = f
 
+    self.omega = 2*np.pi*self.f_soi
+
   def __createSample__(self):
-    omega = 2*np.pi*self.f_soi
     n = self.i*self.M + self.modtimer
-    argf = omega*n/self.fs
+    argf = self.omega*n/self.fs
 
     sample = self.vpk*(np.cos(argf) + 1j*np.sin(argf))
 
     return sample
+
+  def __createSampleArray__(self, nsamps):
+    n = np.arange(0, nsamps)
+    argf = self.omega/self.fs*n
+    samples = self.vpk*np.exp(1j*argf)
+
+    return samples
 
 class ToneSource(Source):
   def __init__(self, M=8, fs=2048, sigpowdb=10, noisepowdb=1, ntones=1, freqlist=[1000]):
@@ -206,6 +222,21 @@ class Impulse(Source):
       return self.dt(1)
     else:
       return self.dt(0)
+
+class ModCounterSource(Source):
+  def __init__(self, M=8, order='natural'):
+    super().__init__(M)
+    self.order = order
+
+  def __createSample__(self):
+
+    if self.order == 'natural':
+      val = self.modtimer
+    else:
+      val = self.M - self.modtimer - 1
+
+    dout = val
+    return dout
 
 class CounterSource(Source):
   def __init__(self, M=8, order='natural'):

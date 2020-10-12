@@ -1,55 +1,57 @@
 `timescale 1ns/1ps
 `default_nettype none
 
-import alpaca_ospfb_monitor_pkg::*;
-import alpaca_ospfb_constants_pkg::*;
-import alpaca_ospfb_hann_2048_8_coeff_pkg::*;
+import alpaca_constants_pkg::*;
+import alpaca_dtypes_pkg::*;
 
-// TODO: decide if mechanisim other than valid to allow vip to start capturing
+import alpaca_ospfb_hann_128_8_coeff_pkg::*;
+
+// TODO: decide if signals other than valid to allow vip to start capturing (e.g., also use last)
 parameter int FRAMES = 32;
-parameter int SAMP = FRAMES*FFT_LEN;
+
+/***************************************************
+  Testbench
+***************************************************/
 
 module xpm_adc_ospfb_tb();
 
 logic adc_clk, dsp_clk, rst, en;
 
-logic event_frame_started;
-logic event_tlast_unexpected;
-logic event_tlast_missing;
-logic event_fft_overflow;
-logic event_data_in_channel_halt;
+alpaca_xfft_status_axis m_axis_fft_status_x2(), m_axis_fft_status_x1();
+
+logic [1:0] event_frame_started;
+logic [1:0] event_tlast_unexpected;
+logic [1:0] event_tlast_missing;
+logic [1:0] event_fft_overflow;
+logic [1:0] event_data_in_channel_halt;
 
 logic vip_full;
 
-axis #(.WIDTH(FFT_STAT_WID)) m_axis_fft_status();
-
-// adc model data source --> dual-clock fifo --> ospfb --> axis vip
 xpm_ospfb_adc_top #(
-  .WIDTH(WIDTH),
+  .SAMP_PER_CLK(SAMP_PER_CLK),
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
   .TAPS(TAPS),
-  .FFT_CONF_WID(FFT_CONF_WID),
-  .FFT_USER_WID(FFT_USER_WID),
+  .TWIDDLE_FILE(TWIDDLE_FILE),
   .SRC_PERIOD(ADC_PERIOD),
   .ADC_BITS(ADC_BITS),
+  .F_SOI_NORM(F_SOI_NORM),
   .DC_FIFO_DEPTH(DC_FIFO_DEPTH),
-  .SAMP(SAMP)
+  .FRAMES(FRAMES)
 ) DUT (
   .s_axis_aclk(adc_clk),
   .m_axis_aclk(dsp_clk),
   .rst(rst),
   .en(en),
-  // fft signals
-  .m_axis_fft_status(m_axis_fft_status),
-
+  // fft status signals
+  .m_axis_fft_status_x2(m_axis_fft_status_x2),
+  .m_axis_fft_status_x1(m_axis_fft_status_x1),
   .event_frame_started(event_frame_started),
   .event_tlast_unexpected(event_tlast_unexpected),
   .event_tlast_missing(event_tlast_missing),
   .event_fft_overflow(event_fft_overflow),
   .event_data_in_channel_halt(event_data_in_channel_halt),
-
   // vip signal
   .vip_full(vip_full)
 );
@@ -89,10 +91,8 @@ parameter string cycfmt = $psprintf("%%%0d%0s",4, "d");
 string logfmt = $psprintf("%%sCycle=%s:\n\tSLV: %%s\n\tMST: %%s%%s\n", cycfmt);
 
 initial begin
-
-  int fp;
   int errors;
-  virtual axis #(.WIDTH(2*WIDTH)) slv; // view into the data source interface
+  virtual alpaca_data_pkt_axis #(.TUSER(1)) slv; // view into the data source interface
 
   slv = DUT.ospfb_inst.s_axis_ospfb;
   errors = 0;
@@ -114,23 +114,14 @@ initial begin
   while (~vip_full) begin
     wait_dsp_cycles(1);
     //$display(logfmt, GRN, simcycles, slv.print(), m_axis_fir.print(), RST);
-    //ospfb.monitor();
   end
 
-  fp = $fopen("xpm_adc_ospfb_capture.bin", "wb");
-  if (!fp) begin
-    $display("could not create file...");
-    $finish;
-  end
-
-  // write formatted binary
-  for (int i=0; i < SAMP; i++) begin
-    $fwrite(fp, "%u", DUT.vip_inst.ram[i]); // writes 4 bytes in native endian format
-  end
-  $fclose(fp);
+  // write capture contents for processing
+  $writememh("xpm_adc_ospfb_capture_hex.txt", DUT.vip_inst.ram);
+  $writememb("xpm_adc_ospfb_capture_bin.txt", DUT.vip_inst.ram);
 
   $display("*** Simulation complete: Errors=%4d ***", errors);
   $finish;
 end
 
-endmodule
+endmodule : xpm_adc_ospfb_tb

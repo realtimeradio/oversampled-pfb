@@ -192,7 +192,7 @@ BEGIN
       C_M_AXIS_STATUS_TDATA_WIDTH => 8,
       C_THROTTLE_SCHEME => 0,
       C_CHANNELS => 1,
-      C_NFFT_MAX => 4,
+      C_NFFT_MAX => 6,
       C_ARCH => 3,
       C_HAS_NFFT => 0,
       C_USE_FLT_PT => 0,

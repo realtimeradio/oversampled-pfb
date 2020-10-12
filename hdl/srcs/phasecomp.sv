@@ -1,11 +1,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-// TODO: can we just important everything from constants now?
-import alpaca_ospfb_constants_pkg::phasecomp_state_t;
-import alpaca_ospfb_constants_pkg::FILLA;
-import alpaca_ospfb_constants_pkg::FILLB;
-import alpaca_ospfb_constants_pkg::ERR;
+import alpaca_dtypes_pkg::*;
 
 // Module: PhaseComp - Phase Compensation Buffer for the OS PFB
 
@@ -13,27 +9,28 @@ import alpaca_ospfb_constants_pkg::ERR;
 // buffer data path. With one BRAM we therefore need to divide the total address
 // space (DEPTH) of the RAM in two.
 
-//TODO: Next steps...
-// 1. move parameters for synthesizable parameters to module parameter declaration list
-// 2. investigate templating types to send real data through ports for verification
-// 3. Possibility to redo the phase rotation buffer using two ram variables instead of the one
+//TODO: Evaluate the folllwing...
+// Possibility to redo the phase rotation buffer using two ram variables instead of the one
 //  A) this may reduce FSM complexity (although not very complex now)
 //  B) may be more efficient for how the tool can cascade deep rams for address resolution
 //  C) apply output pipelined regiters in this behavioral description
 
-// Note: for the ospfb DEPTH=2*FFT_LEN
-module PhaseComp #(DEPTH=16, WIDTH=16, DEC_FAC=6) (//, parameter logic [$clog2(DEPTH/2):0] modinc = DEPTH/2-DEC_FAC) (
+// note for the ospfb DEPTH=2*FFT_LEN
+module PhaseComp #(
+  parameter int DEPTH=64,
+  parameter int DEC_FAC=24,
+  parameter int SAMP_PER_CLK=2
+) (
   input wire logic clk,
-  input wire logic rst,               // active high reset
-  input wire logic [WIDTH-1:0] din,   // TODO: do these data ports need to be signed? seems to be working for SRLs OK
-  output logic [WIDTH-1:0] dout
+  input wire logic rst,
+  input wire fir_pkt_t din,
+  output fir_pkt_t dout
 );
 
-// TODO: do we want an idle state?
-//typedef enum logic {FILLA, FILLB, ERR='X} stateType;
+typedef enum logic {FILLA, FILLB, ERR='X} phasecomp_state_t;
 phasecomp_state_t cs, ns;
 
-logic [(WIDTH-1):0] ram[DEPTH];
+logic signed [$bits(fir_pkt_t)-1:0] ram [DEPTH];
 
 logic [$clog2(DEPTH)-1:0] cs_wAddr, cs_rAddr;
 logic [$clog2(DEPTH)-1:0] ns_wAddr, ns_rAddr;
@@ -44,7 +41,14 @@ logic incShift;   // asserted in fsm logic
 
 logic [$clog2(DEPTH/2)-1:0] tmp_rAddr;
 
-localparam logic [$clog2(DEPTH/2):0] modinc = DEPTH/2-DEC_FAC;
+// why does the width call to $clog not subtract one?
+localparam logic [$clog2(DEPTH/2):0] modinc = (DEPTH/2)-(DEC_FAC/SAMP_PER_CLK); // this is really (M-D)/samp_per_clk
+
+// initialize contents to zero
+initial begin
+  for (int i=0; i<DEPTH; i++)
+    ram[i] = '0;
+end
 
 // simple dual-port RAM inference
 always_ff @(posedge clk)
@@ -97,10 +101,6 @@ always_ff @(posedge clk)
 always_ff @(posedge clk)
   cs <= ns;
 
-// Adopting the approach of using a control path and a FSM to direct the control
-// path. However, since for the time being the control seems it may be straight
-// forward the state machine and data path will be in the same module.
-
 // FSM implementation
 always_comb begin
   // default state values to avoid inferred latches during synthesis
@@ -113,6 +113,7 @@ always_comb begin
   ren = 0;
   tmp_rAddr = 0;
 
+  // fsm cases
   if (rst)
     //ns = FILLA; // always start by filling A
     ns = FILLB;
@@ -125,7 +126,7 @@ always_comb begin
         // two we can just keep adding 1 and get the roll over into the right region
         ns_wAddr = cs_wAddr + 1;
 
-        if (cs_wAddr == DEPTH/2-1) begin
+        if (cs_wAddr == (DEPTH/2)-1) begin
           ns = FILLB;
           incShift = 1;
           // valid reads for fillb are reads on A address space (lower half)
@@ -158,7 +159,7 @@ always_comb begin
         end else begin
           ns = FILLB;
           if (cs_rAddr == 0)
-            ns_rAddr = DEPTH/2 - 1;
+            ns_rAddr = (DEPTH/2) - 1;
 
           else
             ns_rAddr = cs_rAddr - 1;
@@ -167,6 +168,6 @@ always_comb begin
     endcase // case cs
 end
 
-endmodule
+endmodule : PhaseComp
 
 

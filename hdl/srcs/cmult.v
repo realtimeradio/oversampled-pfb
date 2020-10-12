@@ -40,7 +40,6 @@ always @(posedge clk)
  end
  
 // Common factor (ar ai) x bi, shared for the calculations of the real and imaginary final products
-// 
 always @(posedge clk)
  begin
   addcommon <= ar_d - ai_d;
@@ -49,7 +48,6 @@ always @(posedge clk)
  end
 
 // Real product
-//
 always @(posedge clk)
  begin
    ar_ddd   <= ar_dd;
@@ -61,7 +59,6 @@ always @(posedge clk)
  end
 
 // Imaginary product
-//
 always @(posedge clk)
  begin
   ai_ddd   <= ai_dd;

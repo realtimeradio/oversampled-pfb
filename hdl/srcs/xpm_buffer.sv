@@ -14,10 +14,15 @@ module xpm_delaybuf #(
 );
 
 typedef s_axis.data_pkt_t data_pkt_t;
+typedef s_axis.data_t data_t;
+localparam samp_per_clk = s_axis.samp_per_clk;
 localparam width = $bits(data_pkt_t);
 
-alpaca_data_pkt_axis #(.TUSER(TUSER)) s_axis_delaybuf();
-alpaca_data_pkt_axis #(.TUSER(TUSER)) m_axis_delaybuf();
+alpaca_data_pkt_axis #(
+  .dtype(data_t),
+  .SAMP_PER_CLK(samp_per_clk),
+  .TUSER(TUSER)
+) s_axis_delaybuf(), m_axis_delaybuf();
 
 logic [$clog2(FIFO_DEPTH):0] rd_data_count;
 logic almost_full;
