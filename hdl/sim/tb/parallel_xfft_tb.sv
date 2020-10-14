@@ -60,9 +60,6 @@ adc_model #(
   .m_axis(s_axis)
 );
 
-logic tmp_vld;
-assign s_axis_fft.tvalid = (tmp_vld & s_axis_fft.tready);
-
 xpm_fifo_axis #(
   .CLOCKING_MODE("common_clock"),
   .FIFO_DEPTH(16),
@@ -82,8 +79,7 @@ xpm_fifo_axis #(
   .m_axis_tlast(s_axis_fft.tlast),
   .m_axis_tstrb(),
   .m_axis_tuser(),
-  //.m_axis_tvalid(s_axis_fft.tvalid),
-  .m_axis_tvalid(tmp_vld),
+  .m_axis_tvalid(s_axis_fft.tvalid),
 
   .prog_empty_axis(),
   .prog_full_axis(),
@@ -252,7 +248,7 @@ endmodule : impulse_parallel_xfft_top
 *************************/
 import alpaca_constants_pkg::*;
 
-parameter int FRAMES = 1;
+parameter int FRAMES = 2;
 
 parameter int IMPULSE_PHA = 13;
 parameter int IMPULSE_VAL = 128*128;
