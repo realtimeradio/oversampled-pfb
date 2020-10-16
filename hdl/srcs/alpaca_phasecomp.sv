@@ -9,7 +9,7 @@ import alpaca_dtypes_pkg::*;
 // buffer data path. With one BRAM we therefore need to divide the total address
 // space (DEPTH) of the RAM in two.
 
-// note for the ospfb DEPTH=2*FFT_LEN
+// note for the ospfb DEPTH=2*FFT_LEN/SAMP_PER_CLK
 module alpaca_phasecomp #(
   parameter int DEPTH=64,
   parameter int DEC_FAC=24
@@ -24,11 +24,20 @@ typedef s_axis.data_pkt_t data_pkt_t;
 localparam samp_per_clk = s_axis.samp_per_clk;
 
 data_pkt_t din, dout;
+logic new_sample, vld, vldd;
 
-typedef enum logic {FILLA, FILLB, ERR='X} phasecomp_state_t;
+typedef enum logic [1:0] {WAIT, FILLA, FILLB, ERR='X} phasecomp_state_t;
 phasecomp_state_t cs, ns;
 
 logic signed [$bits(data_pkt_t)-1:0] ram [DEPTH];
+
+initial begin
+  for (int i=0; i<DEPTH; i++)
+    ram[i] = '0;
+end
+//always_ff @(posedge clk)
+//  if (rst)
+//    ram <= '{DEPTH{'1}};
 
 logic [$clog2(DEPTH)-1:0] cs_wAddr, cs_rAddr;
 logic [$clog2(DEPTH)-1:0] ns_wAddr, ns_rAddr;
@@ -40,44 +49,53 @@ logic incShift;   // asserted in fsm logic
 logic [$clog2(DEPTH/2)-1:0] tmp_rAddr;
 
 // why does the width call to $clog not subtract one?
-localparam logic [$clog2(DEPTH/2):0] modinc = (DEPTH/2)-(DEC_FAC/samp_per_clk); // this is really (M-D)/samp_per_clk
+// note: not (DEPTH/2-DEC_FAC)/samp_per_clk because depth=FFT_LEN/samp_per_clk already. It may
+// be a better idea to also pass DEC_FAC in by dividing by a samp_per_clk to avoid confusion
+localparam logic [$clog2(DEPTH/2):0] modinc = (DEPTH/2)-(DEC_FAC/samp_per_clk);
+localparam logic [$clog2(DEPTH/2):0] shiftOffsetRstVal = '0-modinc;
 
-// initialize contents to zero
-//initial begin
-//  for (int i=0; i<DEPTH; i++)
-//    ram[i] = '0;
-//end
+// shift offset register
+always_ff @(posedge clk)
+  if (rst)
+    shiftOffset <= shiftOffsetRstVal;
+  else if (incShift)
+    shiftOffset <= shiftOffset + modinc;//+/- matches python [-/+(s*D)%M] initialization
+  else
+    shiftOffset <= shiftOffset;
+
+always_ff @(posedge clk)
+  if (new_sample)
+    din <= s_axis.tdata;
+  else
+    din <= '0;
+
+always_ff @(posedge clk) begin
+  vldd <= vld;
+  m_axis.tvalid <= vldd;
+end
 
 // simple dual-port RAM inference
 always_ff @(posedge clk)
   if (wen)
     ram[cs_wAddr] <= din;
 
-// Synchronous vs. Asynchronous reads
-//always_ff @(posedge clk)
-//  if (ren)
-//    dout <= ram[cs_rAddr];
-assign dout = ram[cs_rAddr];
+always_ff @(posedge clk)
+  if (ren)
+    dout <= ram[cs_rAddr];
+  else // should probably just always enable ren and downstream know when to accept with tvalid
+    dout <= '0;
 
-// shift offset register
+assign m_axis.tdata = dout;
+assign m_axis.tlast = 1'b0;
+assign m_axis.tuser = '0;
+
+// write and read address registers
 always_ff @(posedge clk)
   if (rst)
-    //shiftOffset <= '0;
-    shiftOffset <= '0-modinc;
-  else if (incShift)
-    shiftOffset <= shiftOffset + modinc;//+/- matches python [-/+(s*D)%M] initialization
-  else
-    shiftOffset <= shiftOffset;
-
-// write address register
-always_ff @(posedge clk)
-  if (rst)
-    //cx_wAddr <= '0;
     cs_wAddr <= '1;
   else if (wen)
     cs_wAddr <= ns_wAddr;
 
-// read address register
 always_ff @(posedge clk)
   if (rst)
     cs_rAddr <= (DEPTH/2) + 1;
@@ -90,7 +108,7 @@ always_ff @(posedge clk)
 
 // FSM implementation
 always_comb begin
-  // default state values to avoid inferred latches during synthesis
+  // default state values
   ns = ERR;
   ns_rAddr = '0;
   ns_wAddr = '0;
@@ -101,22 +119,25 @@ always_comb begin
   tmp_rAddr = 0;
 
   s_axis.tready = 1;
-  din = s_axis.tdata;
-
-  m_axis.tdata = dout;
-  m_axis.tvalid = 1;
+  new_sample = (s_axis.tvalid & s_axis.tready);
+  vld = 0;
 
   // fsm cases
   if (rst)
-    //ns = WAIT;
-    ns = FILLB;
+    ns = WAIT;
   else
     case (cs)
+      WAIT: begin
+        if (new_sample)
+          ns = FILLB;
+        else
+          ns = WAIT;
+      end //WAIT
       FILLA: begin
+        vld = 1;
         wen = 1;
         ren = 1;
-        // since we always do a write and and the the RAM is partitioned into
-        // two we can just keep adding 1 and get the roll over into the right region
+
         ns_wAddr = cs_wAddr + 1;
 
         if (cs_wAddr == (DEPTH/2)-1) begin
@@ -135,18 +156,16 @@ always_comb begin
       end //FILLA
 
       FILLB: begin
+        vld = 1;
         wen = 1;
         ren = 1;
-        // since we always do a write and and the the RAM is partitioned into
-        // two we can just keep adding 1 and get the roll over into the right region
+
         ns_wAddr = cs_wAddr + 1;
 
         if (cs_wAddr == DEPTH-1) begin
           ns = FILLA;
           incShift = 1;
           // valid reads for filla are reads in B address space [8,15] (upper half)
-          // we don't have the same losely typed roll over issue here because the upper
-          // address space goes from 3 to 4 bits
           ns_rAddr = (DEPTH/2) + shiftOffset - 1;
         end else begin
           ns = FILLB;
@@ -157,14 +176,20 @@ always_comb begin
             ns_rAddr = cs_rAddr - 1;
         end
       end // FILLB
+
+      default:
+        ns = ERR;
     endcase // case cs
 end
 
 endmodule : alpaca_phasecomp
 
-//TODO: Evaluate the folllwing...
-// Possibility to redo the phase rotation buffer using two ram variables instead of the one
-//  A) this may reduce FSM complexity (although not very complex now)
-//  B) may be more efficient for how the tool can cascade deep rams for address resolution
-//  C) apply output pipelined regiters in this behavioral description
+// since we always do a write and and the the RAM is partitioned into
+// two we can just keep adding 1 and get the roll over into the right region
+//    ns_wAddr = cs_wAddr + 1;
+
+// valid reads for filla are reads in B address space [8,15] (upper half)
+// we don't have the same losely typed roll over issue here because the upper
+// address space goes from 3 to 4 bits (not requiring the tmp_addr variable)
+//    ns_rAddr = (DEPTH/2) + shiftOffset - 1;
 
