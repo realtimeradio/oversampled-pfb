@@ -4,7 +4,10 @@
 import alpaca_constants_pkg::*;
 import alpaca_sim_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
-import alpaca_ospfb_ramp_128_8_coeff_pkg::*;
+import alpaca_ospfb_ramp_512_8_coeff_pkg::*;
+
+// TODO: with the new axis compliant `alpaca_phasecomp' module there is an extra two sample
+// delay between the expected and actual outputs. Need to figure out how to handle this
 
 // impulse parameters (although not used...)
 parameter int IMPULSE_PHA = DEC_FAC+1;
@@ -106,6 +109,7 @@ initial begin
   int err;
 
   virtual alpaca_data_pkt_axis #(.TUSER(1)) slv; // view into the data source interface
+  virtual alpaca_data_pkt_axis #(.dtype(sample_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(1)) ospfb_out;
 
   int errors;
   int x_errs;
@@ -116,7 +120,7 @@ initial begin
   fir_pkt_t pc_out_re;
   fir_pkt_t pc_out_im;
 
-  fname = $psprintf("/home/mcb/git/alpaca/oversampled-pfb/python/apps/golden_ctr_%0d_%0d_%0d.dat",
+  fname = $psprintf("/home/mcb/git/alpaca/oversampled-pfb/python/apps/dat/golden_ctr_%0d_%0d_%0d.dat",
                       FFT_LEN, DEC_FAC, PTAPS);
   fp = $fopen(fname, "rb");
   if (!fp) begin
@@ -141,6 +145,7 @@ initial begin
   $fclose(fp);
     
   slv = DUT.ospfb_inst.s_axis_ospfb;
+  ospfb_out = DUT.ospfb_inst.datapath_inst.fir_re_to_cx;
   errors = 0;
   gidx = 0;
 
@@ -153,6 +158,7 @@ initial begin
 
   // wait until we get out of reset from the ospfb (INIT and WAITFFT states)
   @(posedge slv.tready);
+  //@(posedge ospfb_out.tvalid);
 
   $display("Cycle=%4d: Finished init...", simcycles);
   for (int i=0; i < nread; i=i+SAMP_PER_CLK) begin
@@ -164,8 +170,8 @@ initial begin
     end
     fir_out_re = (DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tready & DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tvalid) ? DUT.ospfb_inst.datapath_inst.m_axis_fir_re.tdata : '0;
     fir_out_im = (DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tready & DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tvalid) ? DUT.ospfb_inst.datapath_inst.m_axis_fir_im.tdata : '0;
-    pc_out_re = DUT.ospfb_inst.datapath_inst.sout_re;
-    pc_out_im = DUT.ospfb_inst.datapath_inst.sout_im;
+    pc_out_re = (DUT.ospfb_inst.datapath_inst.fir_re_to_cx.tready & DUT.ospfb_inst.datapath_inst.fir_re_to_cx.tvalid) ? DUT.ospfb_inst.datapath_inst.fir_re_to_cx.tdata : '0;
+    pc_out_im = (DUT.ospfb_inst.datapath_inst.fir_im_to_cx.tready & DUT.ospfb_inst.datapath_inst.fir_im_to_cx.tvalid) ? DUT.ospfb_inst.datapath_inst.fir_im_to_cx.tdata : '0;
 
     if (pc_out_re === 'x || pc_out_im === 'x) begin
       x_errs++;

@@ -4,7 +4,7 @@
 import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
-import alpaca_ospfb_hann_128_8_coeff_pkg::*;
+import alpaca_ospfb_hann_512_8_coeff_pkg::*;
 
 // TODO: decide if signals other than valid to allow vip to start capturing (e.g., also use last)
 parameter int FRAMES = 32;

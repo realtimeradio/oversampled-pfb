@@ -30,11 +30,12 @@ endgenerate
 assign m_axis_cx.tvalid = s_axis_re.tvalid;
 assign m_axis_cx.tlast  = s_axis_re.tlast;
 
+assign s_axis_re.tready = m_axis_cx.tready;
+assign s_axis_im.tready = m_axis_cx.tready;
+
 endmodule : re_to_cx_axis
 
-// using alpaca data types since the phase comp buffer is not yet axis
-// ...I want it to be but I am afraid of changing too much, then when simulation inevitably
-// fails be unsure about what to test and check
+// just using alpaca data types for when axis not used (e.g., old phasecomp module)
 module re_to_cx #(
   parameter int SAMP_PER_CLK=2
 ) (
@@ -70,8 +71,8 @@ module xpm_ospfb_datapath #(
 ) (
   input wire logic clk,
   input wire logic rst,
-  input wire logic en,  // TODO: seemed to now only be used to control the modtimer counter
-                        // shouldn't be too hard to remove now
+  input wire logic en,  // TODO: only used to control the modtimer counter should remove in favor axis control
+
   alpaca_data_pkt_axis.SLV s_axis,                // upstream input data, pkts of complex data
   alpaca_data_pkt_axis.MST m_axis_data,           // OSPFB output data, now Xk from parallel_xfft, not a xilinx fft
 
@@ -87,14 +88,14 @@ module xpm_ospfb_datapath #(
 localparam width = $bits(cx_pkt_t);
 localparam samp_per_clk = s_axis.samp_per_clk;
 
-// fft and xpm_fifo is reset low
+// xpm fifos are reset low
 logic aresetn;
 assign aresetn = ~rst;
 
-// may not need anymore with everything on axis?... ah, but the phasecomp isn't yet
+// TODO: only thing dependent on this now is the modtimer ctr, needs moved to proper axis tvalid&tready handshakse
 logic hold_rst;
 
-// for controlling samples -- for parallle samples this steps down multiple input ports when 
+// for controlling samples -- for parallel samples this steps down multiple input ports when
 // thinking about commutating samples in a parallel device paradigm
 logic [$clog2(FFT_LEN/samp_per_clk)-1:0] modtimer;           // decimator phase
 logic [$clog2(FFT_LEN/samp_per_clk)-1:0] rst_val = SRT_PHA;  // starting decimator phase (which port gets first sample)
@@ -103,17 +104,14 @@ logic vin;
 fir_pkt_t din_re;
 fir_pkt_t din_im;
 
-fir_pkt_t pc_in_re;
-fir_pkt_t pc_in_im;
-
-fir_pkt_t sout_re;
-fir_pkt_t sout_im;
-
 alpaca_data_pkt_axis #(
   .dtype(sample_t),
   .SAMP_PER_CLK(samp_per_clk),
   .TUSER(1)
 ) s_axis_fir_im(), s_axis_fir_re(), m_axis_fir_im(), m_axis_fir_re();
+
+alpaca_data_pkt_axis #(.dtype(sample_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) fir_re_to_cx(), fir_im_to_cx();
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) xfft_delay_fifo_axis();
 
 assign s_axis_fir_re.tdata = din_re;
 assign s_axis_fir_re.tvalid = s_axis.tvalid;
@@ -123,15 +121,8 @@ assign s_axis_fir_im.tdata = din_im;
 assign s_axis_fir_im.tvalid = s_axis.tvalid;
 assign s_axis_fir_im.tuser = vin;
 
-assign pc_in_re = (m_axis_fir_re.tready & m_axis_fir_re.tvalid) ? m_axis_fir_re.tdata : '0;
-assign pc_in_im = (m_axis_fir_im.tready & m_axis_fir_im.tvalid) ? m_axis_fir_im.tdata : '0;
-// since the upstream slave is the phase comp and phasecomp isn't ready until after hold_rst
-// this seems to make sense
-assign m_axis_fir_re.tready = ~hold_rst;
-assign m_axis_fir_im.tready = ~hold_rst;
-
 //TODO (tlast): is now implemented with new interface... needs to be verifed
-alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) s_axis_fft_data(); // tuser not used
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) s_axis_fft_data();// tuser not on xfft input
 
 // To configure the inverse transform and scaling schedule
 alpaca_xfft_config_axis s_axis_fft_config_x1(), s_axis_fft_config_x2();
@@ -159,15 +150,14 @@ xpm_fir #(
   .m_axis(m_axis_fir_re) // tuser=vout, so far unused
 );
 
-PhaseComp #(
+alpaca_phasecomp #(
   .DEPTH(2*(FFT_LEN/samp_per_clk)),
-  .DEC_FAC(DEC_FAC),
-  .SAMP_PER_CLK(samp_per_clk)
+  .DEC_FAC(DEC_FAC/samp_per_clk) // may be a good idea to divide by samp_per_clk here too avoid confusion
 ) phasecomp_re_inst (
   .clk(clk),
-  .rst(hold_rst),
-  .din(pc_in_re),
-  .dout(sout_re)
+  .rst(rst),
+  .s_axis(m_axis_fir_re),
+  .m_axis(fir_re_to_cx)
 );
 
 xpm_fir #(
@@ -185,30 +175,23 @@ xpm_fir #(
   .m_axis(m_axis_fir_im)  // tuser=vout, so far unused
 );
 
-PhaseComp #(
+alpaca_phasecomp #(
   .DEPTH(2*(FFT_LEN/samp_per_clk)),
-  .DEC_FAC(DEC_FAC),
-  .SAMP_PER_CLK(samp_per_clk)
+  .DEC_FAC(DEC_FAC/samp_per_clk)
 ) phasecomp_im_inst (
   .clk(clk),
-  .rst(hold_rst),
-  .din(pc_in_im),
-  .dout(sout_im)
+  .rst(rst),
+  .s_axis(m_axis_fir_im),
+  .m_axis(fir_im_to_cx)
 );
 
-//alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk). TUSER()) fir_to_cx();
-cx_pkt_t xfft_delay_fifo_data;
-re_to_cx #(
-  .SAMP_PER_CLK(samp_per_clk)
-) re_to_cx_inst (
-  .im(sout_im),
-  .re(sout_re),
-  .cx(xfft_delay_fifo_data)
+re_to_cx_axis re_to_cx_axis_inst (
+  .s_axis_re(fir_re_to_cx),
+  .s_axis_im(fir_im_to_cx),
+  .m_axis_cx(xfft_delay_fifo_axis)
 );
 
-// TODO: is this going to interfer with the dc fifo out front? It will if this comes out of
-// reset later than dcfifo. Or the state machine now has to watch both of these
-logic xfft_delay_fifo_tready;
+// TODO: This fifo will interfer if it comes out of reset later than dcfifo. (it shouldn't though)
 xpm_fifo_axis #(
   .CLOCKING_MODE("common_clock"),
   .FIFO_DEPTH(16),//simulation shown we only need two because of FFT slave wait state at beginning
@@ -236,7 +219,7 @@ xpm_fifo_axis #(
 
   .rd_data_count_axis(),
 
-  .s_axis_tready(xfft_delay_fifo_tready),
+  .s_axis_tready(xfft_delay_fifo_axis.tready),
 
   .sbiterr_axis(),
 
@@ -251,14 +234,14 @@ xpm_fifo_axis #(
   .s_aclk(clk),
   .s_aresetn(aresetn),
 
-  .s_axis_tdata(xfft_delay_fifo_data),
+  .s_axis_tdata(xfft_delay_fifo_axis.tdata),
   .s_axis_tdest('0),
   .s_axis_tid('0),
   .s_axis_tkeep('0),
-  .s_axis_tlast(1'b0),
+  .s_axis_tlast(xfft_delay_fifo_axis.tlast),
   .s_axis_tstrb('0),
-  .s_axis_tuser('0),
-  .s_axis_tvalid(~hold_rst) // idea being we come out of hold_rst and the ospfb is streaming
+  .s_axis_tuser(xfft_delay_fifo_axis.tuser),
+  .s_axis_tvalid(xfft_delay_fifo_axis.tvalid)
 );
 
 parallel_xfft #(

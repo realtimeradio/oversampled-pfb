@@ -66,17 +66,11 @@ initial begin
 
   s_axis = DUT.s_axis;
   rst <= 1;
+  wait_cycles(3);
   @(posedge clk);
   @(negedge clk); rst=0;
-  $display("Finished reset");
-  $display({"in : ", s_axis.print()});
-  $display({"out: ", m_axis.print(), "\n"});
 
-  $display("starting...");
-  $display("waiting one cycle since ospfb starts phase comp on port 0");
-  wait_cycles();
-  $display({"in : ", s_axis.print()});
-  $display({"out: ", m_axis.print(), "\n"});
+  @(posedge m_axis.tvalid);
 
   for (int j=0; j<FRAMES; j++) begin
     $display("FRAME %0d:", j);

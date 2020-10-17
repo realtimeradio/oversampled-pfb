@@ -40,7 +40,7 @@ module xpm_ospfb_impulse_top #(
 );
 
 alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(1)) s_axis();
-alpaca_data_pkt_axis #(.dtype(arith_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(2*8)) m_axis_Xk();
+alpaca_data_pkt_axis #(.dtype(cx_phase_mac_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(2*8)) m_axis_Xk();
 // note the above data type is the full width out of the alpaca butterfly
 
 impulse_generator6 #(

@@ -5,9 +5,21 @@ import alpaca_dtypes_pkg::*;
 
 // Module: PhaseComp - Phase Compensation Buffer for the OS PFB
 
-// A simple dual-port BRAM would be sufficient for now to implement the Ping Pong
-// buffer data path. With one BRAM we therefore need to divide the total address
-// space (DEPTH) of the RAM in two.
+// out of reset the core is to process the last sample of the full first polyphase fir output.
+// This can be considered as the zero-th phase. It is also the same as pulling the sample from output
+// port zero of the polyphase fir into port zero of the FFT (no phase roration -- the first
+// phase roation state). This is because this polyhphase first output only depends on x0 the
+// rest (the previous port outputs) would have been non-causal outputs.
+
+// Considering this, the state machine therefore comes out of the wait state, transistions to
+// FILLB but only is in that state for one cycle before switching to FILLA and start from zero.
+
+// This is implemented with a simple dual-port BRAM should be sufficient for now to implement the
+// Ping Pong buffer data path. With one BRAM we therefore need to divide the total address space
+// (DEPTH) of the RAM in two. One that we fill while reading out of the other.
+
+// Note for the ospfb DEPTH=2*FFT_LEN and that for processing parallel samples the parameters
+// DEPTH and DEC_FAC are presented to the core as 2*FFT_LEN/SAMP_PER_CLK and DEC_FAC/SAMP_PER_CLK
 
 //TODO: Evaluate the folllwing...
 // Possibility to redo the phase rotation buffer using two ram variables instead of the one
@@ -15,7 +27,6 @@ import alpaca_dtypes_pkg::*;
 //  B) may be more efficient for how the tool can cascade deep rams for address resolution
 //  C) apply output pipelined regiters in this behavioral description
 
-// note for the ospfb DEPTH=2*FFT_LEN
 module PhaseComp #(
   parameter int DEPTH=64,
   parameter int DEC_FAC=24,
@@ -41,7 +52,9 @@ logic incShift;   // asserted in fsm logic
 
 logic [$clog2(DEPTH/2)-1:0] tmp_rAddr;
 
-// why does the width call to $clog not subtract one?
+// not [$clog()-1:0] because we want to get modinc as the full value (say 32) and would roll overflow without extra bit
+// note: not (DEPTH/2-DEC_FAC)/samp_per_clk because depth=2*FFT_LEN/samp_per_clk already. It may
+// be a better idea to also pass DEC_FAC in by dividing by a samp_per_clk to avoid confusion
 localparam logic [$clog2(DEPTH/2):0] modinc = (DEPTH/2)-(DEC_FAC/SAMP_PER_CLK); // this is really (M-D)/samp_per_clk
 
 // initialize contents to zero

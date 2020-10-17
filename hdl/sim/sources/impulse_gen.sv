@@ -16,7 +16,7 @@ module impulse_generator6 #(
 
   alpaca_data_pkt_axis.MST m_axis
 );
-
+  typedef m_axis.data_t data_t;
   typedef m_axis.data_pkt_t data_pkt_t;
   localparam SAMP_PER_CLK = m_axis.samp_per_clk;
   localparam MEM_DEPTH = FFT_LEN/SAMP_PER_CLK;
@@ -31,7 +31,12 @@ module impulse_generator6 #(
     for (int i=0; i<MEM_DEPTH; i++) begin
       data_pkt_t pkt;
       for (int j=0; j<SAMP_PER_CLK; j++) begin
-        cx_t tmp;
+        //cx_t tmp;
+        data_t tmp;
+        // was used when testing the phasecomp
+        //tmp = (i*SAMP_PER_CLK+ j + 7) % FFT_LEN;
+        //tmp = ((MEM_DEPTH-i-1)*SAMP_PER_CLK+ j + 0) % FFT_LEN;
+
         // load counter in either real, imaginary or both
         //tmp.re = i*SAMP_PER_CLK+ j;
         //tmp.im = i*SAMP_PER_CLK+ j;
