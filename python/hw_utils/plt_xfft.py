@@ -57,5 +57,5 @@ if __name__=="__main__":
 
     # alternativly could plot all of them
     #plt.plot(fbins, magX.transpose())
-    plt.show() 
+    plt.show()
 

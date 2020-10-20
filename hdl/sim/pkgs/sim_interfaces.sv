@@ -1,7 +1,7 @@
 `default_nettype none
 
 import alpaca_ospfb_ix_pkg::*;
-import alpaca_ospfb_constants_pkg::*;
+import alpaca_constants_pkg::*;
 
 interface delayline_ix #(WIDTH) (
   input wire logic clk

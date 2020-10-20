@@ -1,6 +1,81 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+import alpaca_dtypes_pkg::*;
+
+module parallel_ctr # (
+  parameter MAX_CNT=32,
+  parameter ORDER="natural"
+) (
+  input wire logic clk,
+  input wire logic rst,
+
+  alpaca_data_pkt_axis.MST m_axis
+);
+
+  localparam samp_per_clk = m_axis.samp_per_clk;
+  typedef m_axis.data_pkt_t data_pkt_t;
+  localparam width = $bits(data_pkt_t)/samp_per_clk;
+
+  typedef logic [width-1:0] data_t;
+
+  alpaca_data_pkt_axis #(.dtype(data_t), .SAMP_PER_CLK(1)) ctr_axis[samp_per_clk]();
+
+  genvar ii;
+  generate
+    for (ii=0; ii<samp_per_clk; ii++) begin : gen_ctr
+      src_ctr #(
+        .WIDTH(width),
+        .MAX_CNT(MAX_CNT),
+        .ORDER(ORDER)
+      ) ctr (
+        .clk(clk),
+        .rst(rst),
+        .m_axis(ctr_axis[ii])
+      );
+
+      assign m_axis.tdata[ii] = ctr_axis[ii].tdata;
+
+      assign ctr_axis[ii].tready = m_axis.tready;
+    end
+  endgenerate
+
+  assign m_axis.tvalid = ctr_axis[samp_per_clk-1].tvalid;
+
+endmodule : parallel_ctr
+
+
+module parallel_ctr_tb();
+
+logic clk, rst;
+alpaca_data_pkt_axis m_axis();
+
+clk_generator #(.PERIOD(PERIOD)) clk_gen_inst (.*);
+
+parallel_ctr #(.MAX_CNT(32), .ORDER("natural")) DUT (.*);
+
+task wait_cycles(input int cycles=1);
+  repeat (cycles)
+    @(posedge clk);
+endtask
+
+initial begin
+
+  rst <= 1;
+  wait_cycles(5);
+  @(negedge clk); rst = 0; m_axis.tready = 1'b1;
+
+  // display capture contents
+  for (int i=0; i<32; i++) begin
+    $display("%s", m_axis.print());
+    wait_cycles(1);
+  end
+
+  $finish;
+end
+
+endmodule : parallel_ctr_tb
+
 /*
   Up/down counter simulating ramp for 'processing' and 'natural' order ramp
   implements AXIS to support back pressure to hold count value
@@ -14,7 +89,7 @@ module src_ctr #(
 ) (
   input wire logic clk,
   input wire logic rst,
-  axis.MST m_axis
+  alpaca_data_pkt_axis.MST m_axis
 );
 
 localparam logic [WIDTH-1:0] rst_val = (ORDER=="processing") ?  MAX_CNT-1 : '0;
@@ -144,7 +219,7 @@ endmodule
   Source counter test bench
 */
 
-import alpaca_ospfb_constants_pkg::*;
+import alpaca_constants_pkg::*;
 module test_src_ctr;
 
 // emulates OSPFB parameters

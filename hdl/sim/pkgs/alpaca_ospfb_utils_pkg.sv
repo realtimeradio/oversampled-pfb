@@ -2,7 +2,7 @@
 `default_nettype none
 
 package alpaca_ospfb_utils_pkg;
-  import alpaca_ospfb_constants_pkg::*;
+  import alpaca_constants_pkg::*;
 
   function automatic int mod(input int x, M);
     if (x < 0)

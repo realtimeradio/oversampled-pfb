@@ -1,11 +1,14 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-import alpaca_ospfb_constants_pkg::*;
+import alpaca_constants_pkg::*;
+import alpaca_sim_constants_pkg::*;
+import alpaca_dtypes_pkg::*;
 import alpaca_ospfb_ix_pkg::*;
+import alpaca_ospfb_utils_pkg::*;
 
 parameter int DEPTH = FFT_LEN*2;          // 2M
-parameter int WIDTH = 16;                 // sample bit width
+parameter int TB_SAMP_PER_CLK = 1;
 
 parameter int GCD = gcd(FFT_LEN, DEC_FAC);
 parameter int NUM_STATES = FFT_LEN/GCD;
@@ -15,7 +18,7 @@ module phasecomp_tb();
 // simulation signals
 logic clk, rst;
 
-axis #(.WIDTH(WIDTH)) src_to_dut(), mst();
+alpaca_data_pkt_axis #(.dtype(sample_t), .SAMP_PER_CLK(TB_SAMP_PER_CLK), .TUSER(1)) src_to_dut(), mst();
 
 src_ctr #(
   .WIDTH(WIDTH),
@@ -30,8 +33,8 @@ src_ctr #(
 // instantiate DUT
 PhaseComp #(
   .DEPTH(DEPTH),
-  .WIDTH(WIDTH),
-  .DEC_FAC(DEC_FAC)
+  .DEC_FAC(DEC_FAC),
+  .SAMP_PER_CLK(TB_SAMP_PER_CLK)
 ) DUT (
   .clk(clk),
   .rst(rst),
@@ -40,19 +43,19 @@ PhaseComp #(
 );
 
 // bind monitor
-bind PhaseComp ram_if #(
-                   .WIDTH(WIDTH),
-                   .DEPTH(DEPTH)
-                 ) probe (
-                   .clk(clk),
-                   .ram(ram),
-                   .state(cs),
-                   .din(din),
-                   .cs_wAddr(cs_wAddr),
-                   .cs_rAddr(cs_rAddr),
-                   .shiftOffset(shiftOffset),
-                   .incShift(incShift) 
-                 );
+//bind PhaseComp ram_if #(
+//                   .WIDTH(WIDTH),
+//                   .DEPTH(DEPTH)
+//                 ) probe (
+//                   .clk(clk),
+//                   .ram(ram),
+//                   .state(cs),
+//                   .din(din),
+//                   .cs_wAddr(cs_wAddr),
+//                   .cs_rAddr(cs_rAddr),
+//                   .shiftOffset(shiftOffset),
+//                   .incShift(incShift) 
+//                 );
 
 function automatic void chkram();
   $display("**** RAM contents ****");
@@ -94,7 +97,7 @@ initial begin
   int errors;
   string vldmsg;
 
-  pc_monitor_h = DUT.probe.monitor;
+  //pc_monitor_h = DUT.probe.monitor;
 
   s = new(FFT_LEN);
   k = new(FFT_LEN, NUM_STATES);
@@ -116,7 +119,7 @@ initial begin
     wait_cycles(1);
     $display(logfmt, GRN, simcycles, src_to_dut.print(), mst.print(), RST);
     //#1ns; // what is the right thing to do with monitoring...
-    $display(pc_monitor_h.peek());
+    //$display(pc_monitor_h.peek());
   end
 
   // after M (BRANCH) cycles start verifying output
@@ -124,7 +127,7 @@ initial begin
   for (int i=0; i < 2*DEPTH; i++) begin
     wait_cycles(1);
     $display(logfmt, GRN, simcycles, src_to_dut.print(), mst.print(), RST);
-    $display(pc_monitor_h.peek());
+    //$display(pc_monitor_h.peek());
 
     truth = k.outputTruth();
     if (truth != mst.tdata) begin
