@@ -12,14 +12,12 @@ module xpm_fir #(
   parameter DATABUF_MEM_TYPE="auto",
   parameter SUMBUF_MEM_TYPE="auto",
   parameter fir_taps_t TAPS
-  //parameter logic signed [COEFF_WID-1:0] TAPS [PTAPS*FFT_LEN]
 ) (
   input wire logic clk,
   input wire logic rst,
 
   alpaca_data_pkt_axis.SLV s_axis, // adc samples in, tuser=vin to be applied to sum axis
   alpaca_data_pkt_axis.MST m_axis  // polyphase fir sums out, tuser=vout
-  // expected that sum output be rounded, scaled width (not full bit growth)
 );
 
 localparam samp_per_clk = s_axis.samp_per_clk;
@@ -32,7 +30,7 @@ assign axis_pe_data[0].tvalid = s_axis.tvalid;
 
 assign s_axis.tready = (axis_pe_data[0].tready & axis_pe_sum[0].tready);
 
-assign axis_pe_sum[0].tdata = '0;//{WIDTH{1'b0}};
+assign axis_pe_sum[0].tdata = '0;
 assign axis_pe_sum[0].tvalid = s_axis.tvalid;
 assign axis_pe_sum[0].tuser = s_axis.tuser;
 
@@ -47,7 +45,6 @@ assign axis_pe_sum[PTAPS].tready = m_axis.tready;
 genvar ii;
 generate
   for (ii=0; ii < PTAPS; ii++) begin : gen_pe
-    //localparam logic signed [COEFF_WID-1:0] taps [FFT_LEN] = TAPS[ii*FFT_LEN:(ii+1)*FFT_LEN-1];
     localparam branch_taps_t taps=TAPS[ii*(FFT_LEN/samp_per_clk):(ii+1)*(FFT_LEN/samp_per_clk)-1];
     xpm_pe #(
       .FFT_LEN(FFT_LEN),
@@ -70,6 +67,13 @@ endmodule
 
 /*
   A PE based on the XPM Delaybuf
+
+  *not* complex samples but multiple real (or imag), supports multiple samples per clock in this
+  polyphase fir framework not sure how it would extend to a more general FIR and correclty align
+  the filter coefficients with the correct time sample.
+
+  This PE implments a simple multiply-add (din*h + sin), which would be a single partial sum used in the full
+  multiply accumulate operation of an FIR filter.
 */
 
 module xpm_pe #(
@@ -80,7 +84,6 @@ module xpm_pe #(
   parameter DATABUF_MEM_TYPE="auto",
   parameter SUMBUF_MEM_TYPE="auto",
   parameter branch_taps_t TAPS
-  //parameter logic signed [COEFF_WID-1:0] TAPS [FFT_LEN]
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -88,7 +91,7 @@ module xpm_pe #(
   alpaca_data_pkt_axis.SLV s_axis_data,
   alpaca_data_pkt_axis.MST m_axis_data,
 
-  alpaca_data_pkt_axis.SLV s_axis_sum, //tuser=vin, expecting TUSER WIDTH to be 1 right?
+  alpaca_data_pkt_axis.SLV s_axis_sum, //tuser=vin, expecting TUSER WIDTH to be 1
   alpaca_data_pkt_axis.MST m_axis_sum  //tuser=vout
 );
 typedef s_axis_data.data_pkt_t data_pkt_t;
@@ -117,7 +120,6 @@ alpaca_data_pkt_axis #(
 ) s_axis_loopbuf(), m_axis_loopbuf(), axis_sumbuf(), axis_databuf();
 // tusers not driven on loopbuf interfaces vivado synthesis should complain
 // tuser in the sumbuf interface represents valid in (vin)
-// TODO: need to get data width correct on sumbuf to avoid sv gotchas with sign extension, etc.
 
 fir_pkt_t din;
 fir_pkt_t sin;
@@ -136,20 +138,12 @@ always_ff @(posedge clk)
 assign h = coeff_ram[coeff_ctr];
 
 localparam MULT_LAT = 5;
-fir_pkt_t [MULT_LAT-1:0] a_delay;
 fir_pkt_t [MULT_LAT-1:0] databuf_data_delay;
-fir_pkt_t [MULT_LAT-1:0] mac_delay;
-logic [MULT_LAT-1:0] loopbuf_axis_delay, sumbuf_axis_delay;
+logic [MULT_LAT-1:0][1:0] sumbuf_axis_delay, databuf_axis_delay;
 logic [MULT_LAT-1:0] sumbuf_tuser_delay;
 
-logic [MULT_LAT-1:0][1:0] databuf_axis_delay;
-
 always_ff @(posedge clk) begin
-  a_delay <= {a_delay[MULT_LAT-2:0], a};
-  mac_delay <= {mac_delay[MULT_LAT-2:0], mac};
-
-  loopbuf_axis_delay <= {loopbuf_axis_delay[MULT_LAT-2:0], s_axis_data.tvalid};
-  sumbuf_axis_delay <= {sumbuf_axis_delay[MULT_LAT-2:0], s_axis_sum.tvalid};
+  sumbuf_axis_delay <= {sumbuf_axis_delay[MULT_LAT-2:0], {s_axis_sum.tvalid, s_axis_sum.tlast}};
   sumbuf_tuser_delay <= {sumbuf_tuser_delay[MULT_LAT-2:0], s_axis_sum.tuser};
 
   databuf_data_delay <= {databuf_data_delay[MULT_LAT-2:0], m_axis_loopbuf.tdata};
@@ -157,16 +151,17 @@ always_ff @(posedge clk) begin
 end
 
 always_comb begin
+  s_axis_loopbuf.tdata = a;
+  s_axis_loopbuf.tvalid = s_axis_data.tvalid;
   s_axis_data.tready = s_axis_loopbuf.tready;
-  s_axis_loopbuf.tvalid = s_axis_data.tvalid;//loopbuf_axis_delay[MULT_LAT-1];
-  s_axis_loopbuf.tdata = a;//a_delay[MULT_LAT-1];
 
-  s_axis_sum.tready = axis_sumbuf.tready;
-  axis_sumbuf.tvalid = sumbuf_axis_delay[MULT_LAT-1];
-  axis_sumbuf.tdata = mac;//mac_delay[MULT_LAT-1]; //mac;
+  axis_sumbuf.tdata = mac;
+  axis_sumbuf.tvalid = sumbuf_axis_delay[MULT_LAT-1][1];
+  axis_sumbuf.tlast = sumbuf_axis_delay[MULT_LAT-1][0];
   axis_sumbuf.tuser = sumbuf_tuser_delay[MULT_LAT-1]; //vin
+  s_axis_sum.tready = axis_sumbuf.tready;
 
-  en = s_axis_sum.tvalid; //en_sum = s_axis_sum.tvalid;
+  en = s_axis_sum.tvalid;
   din = s_axis_data.tdata;
   sin = s_axis_sum.tdata;
 
@@ -187,54 +182,56 @@ always_comb begin
 end
 
 // MAC
-//always_comb begin
-//  tmp_mac[1] = sin[1] + a[1]*h[1];
-//  tmp_mac[0] = sin[0] + a[0]*h[0];
-//
-//  mac[1] = $signed(tmp_mac[1][WIDTH-1:0]);
-//  mac[0] = $signed(tmp_mac[0][WIDTH-1:0]);
-//end
+fp_data #(
+  .dtype(sample_t),
+  .W(WIDTH),
+  .F(FRAC_WIDTH)
+) a_in[SAMP_PER_CLK](), c_in[SAMP_PER_CLK]();
 
-  fp_data #(
-    .dtype(sample_t),
-    .W(WIDTH),
-    .F(FRAC_WIDTH)
-  ) a_in[SAMP_PER_CLK](), c_in[SAMP_PER_CLK]();
+fp_data #(
+  .dtype(coeff_t),
+  .W(COEFF_WID),
+  .F(COEFF_FRAC_WID)
+) b_in[SAMP_PER_CLK]();
 
-  fp_data #(
-    .dtype(coeff_t),
-    .W(COEFF_WID),
-    .F(COEFF_FRAC_WID)
-  ) b_in[SAMP_PER_CLK]();
+fp_data #(
+  .dtype(mac_t),
+  .W(WIDTH+COEFF_WID+1),
+  .F(FRAC_WIDTH+COEFF_FRAC_WID)
+) dout[SAMP_PER_CLK]();
 
-  fp_data #(
-    .dtype(mac_t),
-    .W(WIDTH+COEFF_WID+1),
-    .F(FRAC_WIDTH+COEFF_FRAC_WID)
-  ) dout[SAMP_PER_CLK]();
+localparam wid = $bits(mac_t);
+genvar ii;
+generate
+  for (ii=0; ii<SAMP_PER_CLK; ii++) begin
+    assign a_in[ii].data = a[ii];
+    assign b_in[ii].data = h[ii];
+    assign c_in[ii].data = sin[ii];
+    alpaca_multadd pe_multadd (
+      .clk(clk),
+      .rst(rst),
+      .a_in(a_in[ii]),
+      .b_in(b_in[ii]),
+      .c_in(c_in[ii]),
+      .dout(dout[ii])
+    );
+    assign tmp_mac[ii] = dout[ii].data;
+    //assign mac[ii] = $signed(tmp_mac[ii][WIDTH-1:0]);
+    assign mac[ii] = $signed(tmp_mac[ii][wid-1:wid-16]);
+    //assign mac[ii] = $signed(tmp_mac[ii][WIDTH+COEFF_WID-1:COEFF_FRAC_WID]);
+    // I still have some work to figure out here... because the difference between the above two
+    // lines in terms of slicing is one bit but the result on the outputs is much more than 1
+    // bit (line 220 results in peak of fft outpuat at ~120, line 221 results in an fft output
+    // peak of ~5000). It is most likely still just a matter of understanding where the data
+    // fills. And so with input that is only 8 bits of adc you would technically want to do line
+    // 221 because you will never overflow and so all those guard bits you add reduces the
+    // scaling.
 
-  genvar ii;
-  generate
-    for (ii=0; ii<SAMP_PER_CLK; ii++) begin
-      assign a_in[ii].data = a[ii];
-      assign b_in[ii].data = h[ii];
-      assign c_in[ii].data = sin[ii];
-      alpaca_multadd pe_multadd (
-        .clk(clk),
-        .rst(rst),
-        .a_in(a_in[ii]),
-        .b_in(b_in[ii]),
-        .c_in(c_in[ii]),
-        .dout(dout[ii])
-      );
-      assign tmp_mac[ii] = dout[ii].data;
-      assign mac[ii] = $signed(tmp_mac[ii][WIDTH-1:0]);
-      //assign mac[ii] = $signed(tmp_mac[ii][WIDTH+COEFF_WID:COEFF_WID+1]);
-    end
-  endgenerate
-//*/
+    // What this means it is that it argues for the ability to dynamically set this, meaning I
+    // would need to add additional rounding/slicing/scaling schedule like features.
+  end
+endgenerate
 
-// width now determined internal based on s_axis interface
 xpm_delaybuf #(
   .FIFO_DEPTH(M_D/samp_per_clk),
   .TUSER(1),
@@ -246,7 +243,6 @@ xpm_delaybuf #(
   .m_axis(m_axis_loopbuf)  // output of loopbuf resampler, tuser not used here
 );
 
-// width now determined internal based on s_axis interface
 xpm_delaybuf #(
   .FIFO_DEPTH(2*(FFT_LEN/samp_per_clk)),
   .TUSER(1),
@@ -270,18 +266,3 @@ xpm_delaybuf #(
 );
 
 endmodule : xpm_pe
-
-/*
-always_comb begin
-  tmp_mac[1] = sin[1] + a[1]*h[1];
-  tmp_mac[0] = sin[0] + a[0]*h[0];
-
-  mac[1] = $signed(tmp_mac[1][WIDTH-1:0]);
-  mac[0] = $signed(tmp_mac[0][WIDTH-1:0]);
-end
-*/
-
-// note: *not* complex samples but multiple real (or imag), sin + din*h TODO: verilog gotchas to extend and determine
-// coeff tap value, stores `samp_per_clk` coeff {hx, hy}
-// TODO:need correct width and avoid verilog gotchas (sign/ext)
-// note: this is the full growth required (1 mult and 1 add) TODO:need correct width and avoid verilog gotchas (sign/ext)

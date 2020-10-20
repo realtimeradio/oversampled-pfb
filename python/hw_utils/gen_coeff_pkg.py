@@ -111,6 +111,7 @@ def gen_packed_coeff_pkg_file(h, pkg_info=alpaca_coeff_pkg):
   fp.write("\n\n\t};\n\n")
   fp.write("endpackage : {:s}".format(PKG_NAME))
   fp.close()
+
 if __name__=="__main__":
 
   parser = argparse.ArgumentParser()
@@ -131,11 +132,15 @@ if __name__=="__main__":
 
   # compute filter
   if (window == "hann"):
-    h = HannWin.genTaps(M, P, D)
-    filter_pk = np.max(h)
-    lsb_scale = filter_pk/(2**(BITS-1)-1)
-    h_scale = h/lsb_scale;
-    h = np.array(h_scale, dtype=np.int16)
+    h_win = HannWin.genTaps(M, P, D)
+    filter_pk = np.max(h_win)
+    h_norm = h_win/filter_pk
+    lsb_scale = 2**(-(BITS-1))
+    h_scale = h_norm/lsb_scale
+    h_sat = np.round(h_scale) 
+    h_sat = np.where(h_sat < -2**(BITS-1), -2**(BITS-1), h_sat)
+    h_sat = np.where(h_sat > 2**(BITS-1)-1, 2**(BITS-1)-1, h_sat)
+    h_quant = np.int16(h_sat)
   elif (window == "rect"):
     h = Ones.genTaps(M, P, D)
     filter_pk = np.max(h)
@@ -153,6 +158,7 @@ if __name__=="__main__":
   alpaca_coeff_pkg["name"] = "alpaca_ospfb_{:s}_{:d}_{:d}_coeff_pkg".format(window, M, P)
   alpaca_coeff_pkg["ptaps"] = P
   alpaca_coeff_pkg["ntaps"] = M
-  gen_packed_coeff_pkg_file(h, alpaca_coeff_pkg)
+  alpaca_coeff_pkg["width"] = BITS
+  gen_packed_coeff_pkg_file(h_quant, alpaca_coeff_pkg)
 
 
