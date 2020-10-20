@@ -15,26 +15,30 @@ parameter PHASE_WIDTH = 23;             // precision for parallel fft twiddle fa
 parameter PHASE_FRAC_WIDTH = PHASE_WIDTH-1;
 
 parameter COEFF_WID = 16;               // filter coefficient word width
-parameter COEFF_FRAC_WID = COEFF_WID-1;
+parameter COEFF_FRAC_WID = 0;//COEFF_WID-1;
 parameter SAMP_PER_CLK = 2;             // number of samples in adc packet
 
-parameter FFT_CONF_WID = 8;         // fft configuration width (set inverse and scale schedule
+parameter FFT_CONF_WID = 16;         // fft configuration width (set inverse and scale schedule
 parameter FFT_STAT_WID = 8;          // fft status width (overflow and optional Xk index)
 parameter FFT_USER_WID = 8;
 
-parameter FFT_LEN = 128;            // (M)   polyphase branches
+// TODO: should have an 'effective' FFT_LEN and DEC_FAC that are M/SAMP_PER_CLK and
+// D/SAM_PER_CLK as to not have to carry FFT_LEN/samp_per_clk or DEC_FAC/samp_per_clk
+// everywhere. Would really simplify understanding the code and limitations.
+// Will do this once all the new latency and cores are added
+parameter FFT_LEN = 512;            // (M)   polyphase branches
 parameter OSRATIO = 3.0/4.0;
 parameter DEC_FAC = FFT_LEN*OSRATIO; // (D)   decimation factor
 parameter PTAPS = 8;                 // (P)   polyphase taps corresponds to number of PEs
 
 parameter DC_FIFO_DEPTH = FFT_LEN/2;
 
-parameter TWIDDLE_FILE="/home/mcb/git/alpaca/oversampled-pfb/hdl/pkgs/twiddle_inverse_n128_b23.bin";
+parameter TWIDDLE_FILE="/home/mcb/git/alpaca/oversampled-pfb/hdl/pkgs/twiddle_inverse_n512_b23.bin";
 
 // Simulation parameters
 parameter ADC_BITS = 8;             // simulation ADC effective bit resolution
 parameter ADC_GAIN = 1.0;
-parameter F_SOI_NORM = 0.19;        // normalized sampling frequency for ADC tonegeneration
+parameter F_SOI_NORM = 0.27;        // normalized sampling frequency for ADC tonegeneration
 
 // determine ADC clk period given the DSP clk
 parameter real ADC_PERIOD = 12;                 // ADC simulation clock period

@@ -12,17 +12,18 @@ import alpaca_dtypes_pkg::*;
 parameter int END = 20;
 parameter int DUT_LAT = 5;
 
-parameter real WL = 2*WIDTH+1;       // result word len (growth due to multiplication and one add)
-parameter real FWL = FRAC_WIDTH*2;   // fractional length (bits right of decimal)
-parameter real IWL = WL-FWL;         // integer word length (bits left of decimal)
-parameter real lsb_scale = 2**(-FWL);// weight of a single fractional bit
+parameter real WL = (WIDTH+COEFF_WID)+1;          // result word len (growth due to multiplication and one add)
+parameter real FWL = (FRAC_WIDTH+COEFF_FRAC_WID); // fractional length (bits right of decimal)
+parameter real IWL = WL-FWL;                      // integer word length (bits left of decimal)
+parameter real lsb_scale = 2**(-FWL);             // weight of a single fractional bit
 
 module multadd_tb();
 
 logic clk, rst;
 
-fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) a_in(), b_in(), c_in();
-fp_data #(.dtype(phase_mac_t), .W(WIDTH*2+1), .F(FRAC_WIDTH*2)) dout();
+fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) a_in(), c_in();
+fp_data #(.dtype(coeff_t), .W(COEFF_WID), .F(COEFF_FRAC_WID)) b_in();
+fp_data #(.dtype(mac_t), .W(WIDTH+COEFF_WID+1), .F(FRAC_WIDTH+COEFF_FRAC_WID)) dout();
 
 clk_generator #(.PERIOD(PERIOD)) clk_gen_int (.*);
 alpaca_multadd DUT (.*);
@@ -44,20 +45,20 @@ initial begin
   int errors;
   sample_t start_val;
 
-  real tb_start_val;
+  real tb_ac_start_val;
+  real tb_b_start_val;
   real a_tb, b_tb, c_tb;
   real expected;
 
-  // this tb still doesn't get it right because the moudle will roll over but the real values
-  // will not. so this is only good for a few steps.
-  tb_start_val = 1.0/2**(FRAC_WIDTH);
+  tb_ac_start_val = 1.0/2**(FRAC_WIDTH);
+  tb_b_start_val = 1.0/2**(COEFF_FRAC_WID);
   start_val = 1;
 
   rst <= 1;
   a_in.data <= start_val; b_in.data <= start_val; c_in.data <= start_val;
   @(posedge clk);
   @(negedge clk); rst = 0;
-  a_tb = tb_start_val; b_tb = tb_start_val; c_tb = tb_start_val; expected = 0;
+  a_tb = tb_ac_start_val; b_tb = tb_b_start_val; c_tb = tb_ac_start_val; expected = 0;
 
   for (int i=0; i<DUT_LAT; i++) begin
     wait_cycles();
@@ -75,16 +76,16 @@ initial begin
 
   end
 
-  expected = a_tb*a_tb + c_tb;
+  expected = a_tb*b_tb + c_tb;
   for (int i=0; i < END; i++) begin
     wait_cycles();
     //$display("{dout bits: 0x%8X}, fp: %f", dout.data, $itor(dout.data)*lsb_scale);
     $display(dout.print_all());
-    $display("{expected: 0x%9X}, fp: %f", $rtoi(expected/lsb_scale), expected);
+    $display("{expected: %f}", expected);
     
     @(negedge clk);
     a_in.data += 1; b_in.data+=1; c_in.data+=1;
-    a_tb += tb_start_val; b_tb+=tb_start_val; c_tb+=tb_start_val;
+    a_tb += tb_ac_start_val; b_tb+=tb_b_start_val; c_tb+=tb_ac_start_val;
     expected = a_tb*b_tb + c_tb;
   end
 

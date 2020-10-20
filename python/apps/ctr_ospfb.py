@@ -22,6 +22,19 @@ if __name__=="__main__":
   fname = "golden_ctr_{}_{}_{}.dat".format(M, D, P)
   fp = open(fname, 'wb')
 
+  # with new AXIS phase comp the timing is off
+  # faking it here instead of adding the latency to the python phasecomp/ospfb module
+
+  # adds an additional 42 clocks to line up this golden model with the hardware outputs because the added latency due to
+  # making the phasecomp use axis to start running and the pipelined multiply add
+  # phasecomp = 2 samples 1 pipelined register on the input and outputs
+  # PEs multiply add = 40, 5 cycles for the multadd, 8 PEs 
+  for i in range(0,84):
+    fp.write(struct.pack('h', 0x0))
+    fp.write(struct.pack('h', 0x20))
+    fp.write(struct.pack('h', 0x0))
+    fp.write(struct.pack('h', 0xa))
+
   Tend = 8*M*P
   SIM_DT = 'int16'
 

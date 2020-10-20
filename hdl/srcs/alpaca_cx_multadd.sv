@@ -4,10 +4,11 @@
 import alpaca_dtypes_pkg::*;
 
 /*******************************************************************
-  Multiply add
+  Multiply add for parallel fft twiddle factor recombination
 
-  perform a complex multiplication followed by an addition
-  dout = A*B + C
+  perform a complex multiplication followed by an addition and subtraction
+  add_dout = A*B + C
+  sub_dout = A*B - C
   Where A,B and C are complex numbers
 ********************************************************************/
 
@@ -50,10 +51,10 @@ localparam multadd_result_f = mult_result_f;
 // check widths of input interfaces
 initial begin
   assert (multadd_result_w== doutw) begin
-    $display("module arithmitec res=%0d, outw=%0d", multadd_result_w, doutw);
-    $display("binary point adjust: %0d", mult_result_f - cf);
+    $display("cx module arithmitec res=%0d, outw=%0d", multadd_result_w, doutw);
+    $display("cx mult binary point adjust: %0d", mult_result_f - cf);
   end else
-    $display("module arithmitec res=%0d, outw=%0d", multadd_result_w, doutw);
+    $display("cx module arithmitec res=%0d, outw=%0d", multadd_result_w, doutw);
 end
 ///////////////////////////////////
 

@@ -6,7 +6,7 @@ package alpaca_dtypes_pkg;
 
   typedef logic signed [WIDTH-1:0] sample_t;
   typedef logic signed [COEFF_WID-1:0] coeff_t;
-  typedef logic signed [COEFF_WID+WIDTH:0] mac_t;
+  typedef logic signed [WIDTH+COEFF_WID:0] mac_t;
 
   typedef struct packed {
     logic signed [WIDTH-1:0] im;

@@ -38,11 +38,11 @@ module impulse_generator6 #(
         //tmp = ((MEM_DEPTH-i-1)*SAMP_PER_CLK+ j + 0) % FFT_LEN;
 
         // load counter in either real, imaginary or both
-        //tmp.re = i*SAMP_PER_CLK+ j;
-        //tmp.im = i*SAMP_PER_CLK+ j;
+        tmp.re = i*SAMP_PER_CLK+ j;
+        tmp.im = i*SAMP_PER_CLK+ j;
         // load impulse value
-        tmp.re = (i*SAMP_PER_CLK+j == IMPULSE_PHA) ? IMPULSE_VAL : '0;
-        tmp.im = '0;
+        //tmp.re = (i*SAMP_PER_CLK+j == IMPULSE_PHA) ? IMPULSE_VAL : '0;
+        //tmp.im = '0;
 
         pkt[j] = tmp;
       end

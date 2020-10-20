@@ -19,7 +19,10 @@ module alpaca_multadd (
 );
 
 // gather fixed point parameters to perform and check calculation widths
-typedef a_in.data_t data_t;
+typedef a_in.data_t a_data_t;
+typedef b_in.data_t b_data_t;
+typedef c_in.data_t c_data_t;
+
 typedef dout.data_t result_t; 
 
 localparam aw = a_in.w;
@@ -34,28 +37,32 @@ localparam cf = c_in.f;
 localparam doutw = dout.w;
 localparam doutf = dout.f;
 
-localparam mult_result_w = a_in.w + b_in.w;
-localparam mult_result_f = b_in.f + b_in.f;
+localparam mult_result_w = aw + bw;
+localparam mult_result_f = af + bf;
 
-localparam module_result_w = mult_result_w + 1; // multiplication plus one bit for the addition
-localparam module_result_f = mult_result_f;
+localparam multadd_result_w = mult_result_w + 1; // multiplication plus one bit for the addition
+localparam multadd_result_f = mult_result_f;
 
 initial begin
-  assert (module_result_w== doutw)
-    $display("module arithmitec res=%0d, outw=%0d", module_result_w, doutw);
-  else
-    $display("module arithmitec res=%0d, outw=%0d", module_result_w, doutw);
+  assert (multadd_result_w== doutw) begin
+    $display("module arithmitec res=%0d, outw=%0d", multadd_result_w, doutw);
+    $display("mult add binary point adjust: %0d", mult_result_f - cf);
+  end else
+    $display("module arithmitec res=%0d, outw=%0d", multadd_result_w, doutw);
 end
 
 ////////////
 
 localparam ALIGN_BP = mult_result_f - cf;
 localparam MULT_LAT = 2;
-localparam ADD_LAT = 2+1;
+localparam ADD_LAT = MULT_LAT+1;
 
-data_t [MULT_LAT-1:0] a_delay, b_delay;
-data_t [ADD_LAT-1:0] c_delay;
-data_t a, b;
+a_data_t [MULT_LAT-1:0] a_delay;
+b_data_t [MULT_LAT-1:0] b_delay;
+c_data_t [ADD_LAT-1:0] c_delay;
+
+a_data_t a;
+b_data_t b;
 
 result_t c;
 result_t m_reg;  // register intermediate multiplication output
@@ -79,7 +86,7 @@ always_ff @(posedge clk)
     c_delay <= {c_delay[ADD_LAT-2:0], c_in.data};
 
     a <= a_delay[MULT_LAT-1];
-    b <= a_delay[MULT_LAT-1];
+    b <= b_delay[MULT_LAT-1];
     c <= c_delay[ADD_LAT-1] <<< ALIGN_BP; // align binary point for addition
 
     m_reg <= a*b;
