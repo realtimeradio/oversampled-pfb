@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 from source import ToneGenerator
 from taps import (HammWin, HannWin)
 
+# implements a bank of decimated LPF (BD-LPF) the "gold standard" that the polyphase filter bank (PFB)
+# improves with computationaly efficiency
 def os_golden(x, h, yi, M, D, decmod, dt=np.complex128):
 
   L = int(np.ceil((M-decmod)/D))
@@ -31,7 +33,7 @@ def os_golden(x, h, yi, M, D, decmod, dt=np.complex128):
 
   return (Y, yi, L, decmod)
 
-# will work in place of cs_pfb as D=M for critically sampled -> modinc=M-D=0
+# will work in place of cs_pfb as D=M for critically sampled -> modinc = M-D = 0
 def os_pfb(x, modinc, h, M, P):
   L = M*P
   # detect shape dimension for versatility as a function 
@@ -74,7 +76,7 @@ def crandn(shape):
 
 if __name__=="__main__":
 
-  # First stage PFB parameters
+  # First stage channelizer parameters
   Mcoarse = 64
   OSRATIO = 4/3
   Dcoarse = int(Mcoarse/OSRATIO)
@@ -82,7 +84,7 @@ if __name__=="__main__":
   Lcoarse = Mcoarse*Pcoarse
   M_D = Mcoarse-Dcoarse
 
-  # Second stage PFB parameters
+  # Second stage channelizer parameters
   Mfine = 32 
   Dfine = Mfine
   Pfine = 8
@@ -92,64 +94,64 @@ if __name__=="__main__":
   NFFT_COARSE = Mcoarse
   NFFT_FINE = Mfine
   N_FINE_CHANNELS = Dcoarse*Mfine
-  FINE_FRAMES = 10
+  FINE_FRAMES = 128
 
-  hsov = M_D*Mfine//(2*Mcoarse)
+  hsov = M_D*Mfine//(2*Mcoarse)  # "half-sided overlap", this doesn't look like it works in general...
   sel_range = np.arange(hsov, Mfine-hsov)
 
   fs = 10e3
-  f_soi = 5.0e3#2.7e3
+  f_soi = 2.71e3
   argf = 2*np.pi*f_soi/fs
 
   # protype low pass filter generation
   hcoarse = HannWin.genTaps(Mcoarse, Pcoarse, Dcoarse)
   hfine = HannWin.genTaps(Mfine, Pfine, Dfine)
 
-  # ospfb process
+  # ospfb fine channel pruned, concatenated outputs
   Xkfine_fft = np.zeros((N_FINE_CHANNELS, FINE_FRAMES), dtype=np.complex128)
   Xkfine_pfb = np.zeros((N_FINE_CHANNELS, FINE_FRAMES), dtype=np.complex128)
 
-  # filter state for first and second stage filter banks
+  # filter state for first and second stage pfb filter banks
   zicoarse = np.zeros(Lcoarse, dtype=np.complex128)
   zifine = np.zeros((Mcoarse, Lfine), dtype=np.complex128)
 
-  # bank of decimated lpf
+  # bd-lpf
   Ykfine_fft = np.zeros((N_FINE_CHANNELS, FINE_FRAMES), dtype=np.complex128)
   Ykfine_pfb = np.zeros((N_FINE_CHANNELS, FINE_FRAMES), dtype=np.complex128)
 
   # first stage temprorary buffer and filter state since
-  # the temporary buffer holds intermediate values as the ospfb and bank of decimated lpf are
+  # the temporary buffer holds intermediate values as the ospfb and bd-lpf are
   # operating at different intervals (ospfb stepping Dcoarse, while lpf steps Mcoarse)
   ybuf = np.zeros(2*Mcoarse, dtype=np.complex128)
-  yi = np.zeros((Mcoarse, Lcoarse-1), dtype=np.complex128) # first stage filter state for bank of decimated lpf
+  yi = np.zeros((Mcoarse, Lcoarse-1), dtype=np.complex128) # first stage filter state for bd-lpf
   yifine = np.zeros((Mcoarse, Lfine), dtype=np.complex128) # second stage pfb filter state
 
-  nn=0
+  nn = 0     # track number of `Dcoarse` samples created and used to keep a continous stream of data generated
   modinc = 0 # ospfb phase compensation rotation
-  decmod = 0 # bank of decimated lpf decimation step
+  decmod = 0 # bd-lpf decimation step between iterations
   for i in range(0, FINE_FRAMES):
     # ospfb
     Xkcoarse = np.zeros((Mcoarse, Mfine), dtype=np.complex128)
 
-    # bank of lpf
-    # the bank of decimated lpf run at a slower interval (steping Mcoarse samples at a time and so intermediate state
-    # variables are required to count and keep track.
+    # bank of decimated lpfs
+    # the bd-lpfs run at a slower interval (steping Mcoarse samples at a time and so intermediate state variables are
+    # required to keep track of progress
     # `bufed` is the current write pointer in the temporary index. Processing waits until at least Mcoarse samples are
     # in the temporary buffer marked by `bufed`
-    # `yst` and `yed` are used because at different iterations of the bank of decimated lpfs and depending on `decmod`
-    # there will be multiple frequency channel outputs and so these keep track of the current coarse frame output.
+    # `yst` and `yed` are used to keep track of placing fine outputs in the rsult buffer, because between iterations of the bd-lpfs and
+    # depending on `decmod` there will varying ouput frequency channels
     yst = 0
     yed = 0
     bufed = 0
     Ykcoarse = np.zeros((Mcoarse, Mfine), dtype=np.complex128)
     for j in range(0, Mfine):
-      # generate Dcoarse amount of samples
-      sig = 0.001*np.exp(1j*argf*(np.arange(nn*Dcoarse, (nn+1)*Dcoarse)))# + 0.001*crandn(Dcoarse)
+      # generate this steps `Dcoarse` number of samples
+      sig = 0.001*np.exp(1j*argf*(np.arange(nn*Dcoarse, (nn+1)*Dcoarse))) + 0.001*crandn(Dcoarse)
 
-      # process through bank of lpf - requires Mcoarse number of samples so monitor and process as necessary
+      # process through bd-lpfs, this requires `Mcoarse` number of samples, so we monitor and process available samples as necessary
       ybuf[bufed:(bufed+Dcoarse)] = sig
       bufed += Dcoarse
-
+      # catch up/process inputs as available
       while (bufed >= Mcoarse):
         y = ybuf[:Mcoarse]
         (Ydec, yi, ndec, decmod) = os_golden(y, hcoarse, yi, Mcoarse, Dcoarse, decmod)
@@ -160,7 +162,7 @@ if __name__=="__main__":
         Ykcoarse[:, yst:yed] = Ydec
         yst = yed
 
-      # process ospfb
+      # run ospfb
       zicoarse[-Dcoarse:] = sig
       Xkcoarse[:, j] = os_pfb(zicoarse, modinc, hcoarse, Mcoarse, Pcoarse)
       zicoarse[:-Dcoarse] = zicoarse[Dcoarse:]
@@ -168,30 +170,31 @@ if __name__=="__main__":
       # advance data counter
       nn+=1
 
-    # second stage FFT on ospfb outputs
+    # second stage fft on ospfb outputs
     Xkfinetmp = fftshift(fft(Xkcoarse, Mfine, axis=1), axes=(1,))/Mfine
     Xkfine_pruned = Xkfinetmp[:, sel_range]
     Xkfine_fft[:, i] = Xkfine_pruned.reshape(N_FINE_CHANNELS)
 
-    #second stage CSPFB on ospfb outputs
+    #second stage cspfb on ospfb outputs
     zifine[:, -Mfine:] = Xkcoarse
     Xkfinetmp = fftshift(cs_pfb(zifine, hfine, Mfine, Pfine), axes=(1,))
     Xkfine_pruned = Xkfinetmp[:, sel_range]
     Xkfine_pfb[:, i] = Xkfine_pruned.reshape(N_FINE_CHANNELS)
     zifine[:, :-Mfine] = zifine[:, Mfine:]
 
-    # second stage FFT on bank of decimated lpf outputs
+    # second stage fft on bd-lpf outputs
     Ykfinetmp = fftshift(fft(Ykcoarse, Mfine, axis=1), axes=(1,))/Mfine # pretty sure arb. scaling to compare
     Ykfine_pruned = Ykfinetmp[:, sel_range]
     Ykfine_fft[:, i] = Ykfine_pruned.reshape(N_FINE_CHANNELS)
 
-    # second stage CSPFB on bank of decimated lpf outputs
+    # second stage cspfb on bd-lpf outputs
     yifine[:, -Mfine:] = Ykcoarse
     Ykfinetmp = fftshift(cs_pfb(yifine, hfine, Mfine, Pfine), axes=(1,))
     Ykfine_pruned = Ykfinetmp[:, sel_range]
     Ykfine_pfb[:, i] = Ykfine_pruned.reshape(N_FINE_CHANNELS)
     yifine[:, :-Mfine] = yifine[:, Mfine:]
 
+  # compute PDSs
   Sxx_fft = np.mean(np.real(Xkfine_fft*np.conj(Xkfine_fft)), 1)
   Sxx_pfb = np.mean(np.real(Xkfine_pfb*np.conj(Xkfine_pfb)), 1)
 
