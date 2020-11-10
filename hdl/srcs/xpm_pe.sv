@@ -107,10 +107,9 @@ logic [$clog2(mem_depth)-1:0] coeff_ctr;
 logic [$clog2(mem_depth)-1:0] coeff_rst = COF_SRT;
 
 // MAC operation signals
-fir_pkt_t a;        
-coeff_pkt_t h;      
-fir_pkt_t mac;      
-mac_pkt_t tmp_mac;  
+fir_pkt_t a;
+fir_pkt_t mac;
+coeff_pkt_t h;
 
 // connection signals
 alpaca_data_pkt_axis #(
@@ -137,7 +136,7 @@ always_ff @(posedge clk)
 
 assign h = coeff_ram[coeff_ctr];
 
-localparam MULT_LAT = 5;
+localparam MULT_LAT = 7; // mult=5 + rnd=2
 fir_pkt_t [MULT_LAT-1:0] databuf_data_delay;
 logic [MULT_LAT-1:0][1:0] sumbuf_axis_delay, databuf_axis_delay;
 logic [MULT_LAT-1:0] sumbuf_tuser_delay;
@@ -181,12 +180,14 @@ always_comb begin
     a = loopbuf_out;
 end
 
-// MAC
+// MAC and convergent round
+// potentially may want to have the convergent round be its own block as to support
+// seperate the functionality for if we need dynamic scaling
 fp_data #(
   .dtype(sample_t),
   .W(WIDTH),
   .F(FRAC_WIDTH)
-) a_in[SAMP_PER_CLK](), c_in[SAMP_PER_CLK]();
+) a_in[SAMP_PER_CLK](), c_in[SAMP_PER_CLK](), dout[SAMP_PER_CLK]();
 
 fp_data #(
   .dtype(coeff_t),
@@ -194,20 +195,19 @@ fp_data #(
   .F(COEFF_FRAC_WID)
 ) b_in[SAMP_PER_CLK]();
 
-fp_data #(
-  .dtype(mac_t),
-  .W(WIDTH+COEFF_WID+1),
-  .F(FRAC_WIDTH+COEFF_FRAC_WID)
-) dout[SAMP_PER_CLK]();
+//fp_data #(
+//  .dtype(mac_t),
+//  .W(WIDTH+COEFF_WID+1),
+//  .F(FRAC_WIDTH+COEFF_FRAC_WID)
+//) dout[SAMP_PER_CLK]();
 
-localparam wid = $bits(mac_t);
 genvar ii;
 generate
   for (ii=0; ii<SAMP_PER_CLK; ii++) begin
     assign a_in[ii].data = a[ii];
     assign b_in[ii].data = h[ii];
     assign c_in[ii].data = sin[ii];
-    alpaca_multadd pe_multadd (
+    alpaca_multadd_convrnd pe_multadd (
       .clk(clk),
       .rst(rst),
       .a_in(a_in[ii]),
@@ -215,20 +215,8 @@ generate
       .c_in(c_in[ii]),
       .dout(dout[ii])
     );
-    assign tmp_mac[ii] = dout[ii].data;
-    //assign mac[ii] = $signed(tmp_mac[ii][WIDTH-1:0]);
-    assign mac[ii] = $signed(tmp_mac[ii][wid-1:wid-16]);
-    //assign mac[ii] = $signed(tmp_mac[ii][WIDTH+COEFF_WID-1:COEFF_FRAC_WID]);
-    // I still have some work to figure out here... because the difference between the above two
-    // lines in terms of slicing is one bit but the result on the outputs is much more than 1
-    // bit (line 220 results in peak of fft outpuat at ~120, line 221 results in an fft output
-    // peak of ~5000). It is most likely still just a matter of understanding where the data
-    // fills. And so with input that is only 8 bits of adc you would technically want to do line
-    // 221 because you will never overflow and so all those guard bits you add reduces the
-    // scaling.
 
-    // What this means it is that it argues for the ability to dynamically set this, meaning I
-    // would need to add additional rounding/slicing/scaling schedule like features.
+    assign mac[ii] = dout[ii].data;
   end
 endgenerate
 
