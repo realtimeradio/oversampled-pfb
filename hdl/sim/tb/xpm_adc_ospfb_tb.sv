@@ -4,7 +4,8 @@
 import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
-import alpaca_ospfb_hann_512_8_coeff_pkg::*;
+//import alpaca_ospfb_hann_512_8_coeff_pkg::*;
+import alpaca_ospfb_hann_128_8_coeff_pkg::*;
 
 // TODO: decide if signals other than valid to allow vip to start capturing (e.g., also use last)
 parameter int FRAMES = 32;
@@ -35,8 +36,10 @@ xpm_ospfb_adc_top #(
   .TAPS(TAPS),
   .TWIDDLE_FILE(TWIDDLE_FILE),
   .SRC_PERIOD(ADC_PERIOD),
-  .ADC_BITS(ADC_BITS),
   .F_SOI_NORM(F_SOI_NORM),
+  .ADC_GAIN(ADC_GAIN),
+  .ADC_BITS(ADC_BITS),
+  .SIGMA_BIT(SIGMA_BIT),
   .DC_FIFO_DEPTH(DC_FIFO_DEPTH),
   .FRAMES(FRAMES)
 ) DUT (

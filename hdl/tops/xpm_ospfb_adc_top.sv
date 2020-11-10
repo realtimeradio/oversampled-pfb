@@ -17,8 +17,10 @@ module xpm_ospfb_adc_top #(
   parameter TWIDDLE_FILE="",
   // source adc
   parameter real SRC_PERIOD=10,
-  parameter int ADC_BITS=12,
   parameter real F_SOI_NORM=0.27,
+  parameter real ADC_GAIN=1.0,
+  parameter int ADC_BITS=12,
+  parameter int SIGMA_BIT=6,
   // dc fifo
   parameter int DC_FIFO_DEPTH=32,
   // vip capture
@@ -47,8 +49,10 @@ alpaca_data_pkt_axis #(.dtype(cx_phase_mac_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUS
 // data source for simulation
 adc_model #(
   .PERIOD(SRC_PERIOD),
+  .F_SOI_NORM(F_SOI_NORM),
+  .GAIN(ADC_GAIN),
   .BITS(ADC_BITS),
-  .F_SOI_NORM(F_SOI_NORM)
+  .SIGMA_BIT(SIGMA_BIT)
 ) adc_inst (
   .clk(s_axis_aclk),
   .rst(rst),

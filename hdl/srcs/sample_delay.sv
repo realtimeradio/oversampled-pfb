@@ -94,7 +94,11 @@ module sample_delay_top #(
   output logic full
 );
 
-alpaca_data_pkt_axis s_axis(), m_axis();
+alpaca_data_pkt_axis #(
+  .dtype(sample_t),
+  .SAMP_PER_CLK(SAMP_PER_CLK),
+  .TUSER(1)
+) s_axis(), m_axis();
 
 impulse_generator6 #(
   .FFT_LEN(FFT_LEN),
@@ -112,9 +116,7 @@ sample_delay sample_delay_inst (
   .m_axis(m_axis)
 );
 
-
 parallel_axis_vip #(
-  //.dtype(arith_pkt_t),
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) vip (
   .clk(clk),

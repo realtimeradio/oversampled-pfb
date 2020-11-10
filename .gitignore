@@ -28,6 +28,7 @@ exports/
 work/
 transcript
 vsim.wlf
+*.do
 
 # misc
 history.txt

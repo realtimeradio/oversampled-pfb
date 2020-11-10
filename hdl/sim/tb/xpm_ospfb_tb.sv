@@ -4,7 +4,8 @@
 import alpaca_constants_pkg::*;
 import alpaca_sim_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
-import alpaca_ospfb_ramp_512_8_coeff_pkg::*;
+//import alpaca_ospfb_ramp_512_8_coeff_pkg::*;
+import alpaca_ospfb_ramp_128_8_coeff_pkg::*;
 
 // TODO: with the new axis compliant `alpaca_phasecomp' module there is an extra two sample
 // delay between the expected and actual outputs. Need to figure out how to handle this
