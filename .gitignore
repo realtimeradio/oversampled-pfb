@@ -18,6 +18,7 @@ exports/
 *.out
 *.dat
 *.coeff
+*.txt
 
 # vivado logs
 *.log

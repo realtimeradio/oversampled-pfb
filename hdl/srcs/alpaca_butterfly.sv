@@ -28,7 +28,7 @@ initial begin
 end
 
 wk_t Wk;
-cx_phase_mac_t Xkhi, Xklo;
+cx_t Xkhi, Xklo;
 
 always_ff @(posedge clk)
   if (rst)
@@ -42,8 +42,8 @@ assign Wk = twiddle[ctr];
 // is done in the next cycle, maybe cross/boundry synthesis will optimize this into the dsp, and
 // but so we may need to add more for better fclk. Also may want to add more to clock the
 // twiddle factor out.
-// cmult latency + final add/sub (may need more, see above note)
-localparam AXIS_LAT = 7;
+// cmult latency + final add/sub + convergent round (may need more, see above note)
+localparam AXIS_LAT = 7; // mult+add/sub=7, rnd=2
 logic [AXIS_LAT-1:0][1:0] axis_delay; // {tvalid, tlast}
 
 logic [AXIS_LAT-1:0][$bits(Xk.tuser)-1:0] axis_tuser_delay; // concatenate x1/x2 tuser as {x1,x2}
@@ -60,9 +60,8 @@ end
 // the AXI or some other way
 fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) ar_in(), ai_in(), cr_in(), ci_in();
 fp_data #(.dtype(phase_t), .W(PHASE_WIDTH), .F(PHASE_FRAC_WIDTH)) br_in(), bi_in();
-fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) add_dout_re(), add_dout_im();
-fp_data #(.dtype(phase_mac_t), .W(WIDTH+PHASE_WIDTH+1), .F(FRAC_WIDTH+PHASE_FRAC_WIDTH)) sub_dout_re(), sub_dout_im();
-localparam wid = $bits(phase_mac_t);
+fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) add_dout_re(), add_dout_im();
+fp_data #(.dtype(sample_t), .W(WIDTH), .F(FRAC_WIDTH)) sub_dout_re(), sub_dout_im();
 
 assign ar_in.data = x2.tdata.re;
 assign ai_in.data = x2.tdata.im;
@@ -76,16 +75,14 @@ assign Xklo.im = add_dout_im.data;
 assign Xkhi.re = sub_dout_re.data;
 assign Xkhi.im = sub_dout_im.data;
 
-alpaca_cx_multadd cmult_inst (.*);
+alpaca_cx_multadd_convrnd cmult_inst (.*);
 
 assign Xk.tdata = {Xkhi, Xklo}; //may need to do another one register for dsp slice clock efficiency?
-//assign Xk.tdata = {Xkhi[wid-1:wid-16], Xklo[wid-1:wid-16]}; //may need to do another one register for dsp slice clock efficiency?
 assign Xk.tvalid = axis_delay[AXIS_LAT-1][1];
 assign Xk.tlast = axis_delay[AXIS_LAT-1][0];
 assign Xk.tuser = axis_tuser_delay[AXIS_LAT-1];
 
 assign x1.tready = ~rst;
 assign x2.tready = ~rst;
-
 
 endmodule : alpaca_butterfly
