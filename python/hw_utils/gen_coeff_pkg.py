@@ -149,6 +149,7 @@ if __name__=="__main__":
     h = np.array(h_scale, dtype=np.int16)
   elif (window == "ramp"):
     h = CyclicRamp.genTaps(M, P, D)
+    h_quant = h
   elif (window == "ones"):
     h = np.ones(M*P, dtype=np.int16)
   else:
