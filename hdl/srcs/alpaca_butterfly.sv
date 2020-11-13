@@ -43,7 +43,7 @@ assign Wk = twiddle[ctr];
 // but so we may need to add more for better fclk. Also may want to add more to clock the
 // twiddle factor out.
 // cmult latency + final add/sub + convergent round (may need more, see above note)
-localparam AXIS_LAT = 7; // mult+add/sub=7, rnd=2
+localparam AXIS_LAT = 9; // mult+add/sub=7, rnd=2
 logic [AXIS_LAT-1:0][1:0] axis_delay; // {tvalid, tlast}
 
 logic [AXIS_LAT-1:0][$bits(Xk.tuser)-1:0] axis_tuser_delay; // concatenate x1/x2 tuser as {x1,x2}

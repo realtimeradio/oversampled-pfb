@@ -300,10 +300,12 @@ always_comb begin
   // TODO: only set once but should be parameterized so that I don't forget it when moving
   // between M for testing
   // default configuration values {pad (if needed), scale_sched, fwd/inv xform}
-  s_axis_fft_config_x2.tdata = {1'b0, 2'b10, 2'b10, 2'b10, 1'b0}; // N=64 (ospfb fft len/2)
-  s_axis_fft_config_x1.tdata = {1'b0, 2'b10, 2'b10, 2'b10, 1'b0};
+  //s_axis_fft_config_x2.tdata = {1'b0, 2'b10, 2'b10, 2'b10, 1'b0}; // N=64 (ospfb fft len/2)
+  //s_axis_fft_config_x1.tdata = {1'b0, 2'b10, 2'b10, 2'b10, 1'b0};
   //s_axis_fft_config_x2.tdata = {3'b0, 2'b00, 2'b00, 2'b10, 2'b10, 2'b10, 2'b10, 1'b0}; // N=256 (ospfb fft len/2)
   //s_axis_fft_config_x1.tdata = {3'b0, 2'b00, 2'b00, 2'b10, 2'b10, 2'b10, 2'b10, 1'b0};
+  s_axis_fft_config_x2.tdata = {3'b0, 2'b00, 2'b10, 2'b10, 2'b10, 2'b10, 2'b10, 1'b0}; // N=1024 (ospfb fft len/2)
+  s_axis_fft_config_x1.tdata = {3'b0, 2'b00, 2'b10, 2'b10, 2'b10, 2'b10, 2'b10, 1'b0};
   s_axis_fft_config_x2.tvalid = 1'b0;
   s_axis_fft_config_x1.tvalid = 1'b0;
 
