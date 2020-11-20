@@ -100,9 +100,9 @@ localparam samp_per_clk = s_axis_data.samp_per_clk;
 localparam M_D = FFT_LEN-DEC_FAC;
 localparam mem_depth = FFT_LEN/samp_per_clk;
 
-// TODO: fix for synthesis with $bits(coeff_pkt_t)
 coeff_pkt_t coeff_ram[mem_depth] = TAPS;
 logic [$clog2(mem_depth)-1:0] coeff_ctr;
+
 // TODO: make note how starting phase also would be important to get right here
 logic [$clog2(mem_depth)-1:0] coeff_rst = COF_SRT;
 
@@ -181,8 +181,7 @@ always_comb begin
 end
 
 // MAC and convergent round
-// potentially may want to have the convergent round be its own block as to support
-// seperate the functionality for if we need dynamic scaling
+// may want the convergent round to be its own block to support dynamic scaling
 fp_data #(
   .dtype(sample_t),
   .W(WIDTH),
@@ -194,12 +193,6 @@ fp_data #(
   .W(COEFF_WID),
   .F(COEFF_FRAC_WID)
 ) b_in[SAMP_PER_CLK]();
-
-//fp_data #(
-//  .dtype(mac_t),
-//  .W(WIDTH+COEFF_WID+1),
-//  .F(FRAC_WIDTH+COEFF_FRAC_WID)
-//) dout[SAMP_PER_CLK]();
 
 genvar ii;
 generate

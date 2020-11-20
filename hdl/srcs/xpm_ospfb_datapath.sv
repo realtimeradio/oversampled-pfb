@@ -64,7 +64,7 @@ module xpm_ospfb_datapath #(
   parameter SRT_PHA=23,  // (DEC_FAC-1) modtimer decimation phase start (which port delivered first)
   parameter PTAPS=8,
   parameter fir_taps_t TAPS,
-  parameter TWIDDLE_FILE="",
+  parameter twiddle_factor_t WK,
   parameter LOOPBUF_MEM_TYPE="auto",
   parameter DATABUF_MEM_TYPE="auto",
   parameter SUMBUF_MEM_TYPE="auto"
@@ -246,7 +246,7 @@ xpm_fifo_axis #(
 
 parallel_xfft #(
   .FFT_LEN(FFT_LEN),
-  .TWIDDLE_FILE(TWIDDLE_FILE)
+  .WK(WK)
 ) p_xfft_inst (
   .clk(clk),
   .rst(rst),

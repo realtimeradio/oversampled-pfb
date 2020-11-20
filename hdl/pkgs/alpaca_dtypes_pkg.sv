@@ -31,14 +31,15 @@ package alpaca_dtypes_pkg;
     logic signed [PHASE_WIDTH-1:0] re;
   } wk_t;
 
-  // TODO: get correct width
-  // but this represents the growth required from mult and 1 add
+  // allows for bit-growth required from a mult and add
   typedef struct packed {
     logic signed [PHASE_WIDTH+WIDTH:0] im;
     logic signed [PHASE_WIDTH+WIDTH:0] re;
   } cx_phase_mac_t;
 
   typedef cx_phase_mac_t [SAMP_PER_CLK-1:0] cx_phase_pkt_t;
+
+  typedef wk_t twiddle_factor_t[FFT_LEN/2];
 
 endpackage : alpaca_dtypes_pkg
 

@@ -9,7 +9,7 @@ import alpaca_dtypes_pkg::*;
   perform a complex multiplication followed by an addition and subtraction
   add_dout = A*B + C
   sub_dout = A*B - C
-  Where A,B and C are complex numbers
+  A,B and C are complex numbers
 ********************************************************************/
 
 module alpaca_cx_multadd_convrnd (
@@ -24,12 +24,12 @@ module alpaca_cx_multadd_convrnd (
   fp_data.O sub_dout_re, sub_dout_im
 );
 
-// gather fixed point parameters to perform and check calculation widths
+// use fixed-point parameters to create types and check computation widths
 typedef ar_in.data_t a_data_t;
 typedef br_in.data_t b_data_t;
 typedef cr_in.data_t c_data_t;
 
-typedef add_dout_re.data_t dout_data_t; 
+typedef add_dout_re.data_t dout_data_t;
 
 localparam aw = ar_in.w;
 localparam af = ar_in.f;
@@ -60,17 +60,14 @@ end
 ///////////////////////////////////
 
 localparam ALIGN_BP = mult_result_f - cf;
-localparam A_LAT = 4;
+
+// nominally a latency of 4 is required on the A pipeline but an additional one has been added
+// for clocking in a twiddle factor coefficient
+// Fully pipelined latency: input form bram = 1, cx mult=6, twiddle add/sub = 1, rnd=2
+localparam A_LAT = 5;
 localparam B_LAT = A_LAT-1;
 localparam C_LAT = A_LAT+1;
 
-/*
-  Is the following still true?
-  vivado synthesis comes back and says that this will most likely be implemented in registers
-  because the abstract data type recognition is not supported. Registers are what I want and
-  this is OK. But were I to change to `logic signed [X1_LAT-1:0][$bits(cx_t)-1:0] x1_delay;` I
-  would then not be able to pull out the real and imaginary part with .re/.im struct notation.
-*/
 a_data_t [A_LAT-1:0] ar_delay, ai_delay;
 b_data_t [B_LAT-1:0] br_delay, bi_delay;
 c_data_t [C_LAT-1:0] cr_delay, ci_delay;
@@ -86,7 +83,7 @@ result_t m_reg_common, m_reg_common_d;
 result_t common_im, common_re;
 result_t m_reg_re, m_reg_im;  // register intermediate multiplication output
 
-result_t c_re, c_im; // to scale
+result_t c_re, c_im; // for scaled c input
 
 result_t cxmult_re, cxmult_im;
 result_t multadd_re, multadd_im;
@@ -108,7 +105,7 @@ logic [SHIFT_LEFT:0] pattern = '0; // for convergent even
 result_t cc = half_lsb - 1;
 result_t carryin = 1'b1;
 
-
+// arithmetic computations
 always_comb begin
   rndadd_re = multadd_re + cc + carryin;
   rndadd_im = multadd_im + cc + carryin;
@@ -123,7 +120,7 @@ always_ff @(posedge clk) begin
     m_reg_common <= '0;
     m_reg_common_d <= '0;
   end else begin
-    addcommon <= ar_delay[0] - ai_delay[0];
+    addcommon <= ar_delay[A_LAT-4] - ai_delay[A_LAT-4];
 
     m_reg_common <= addcommon * bi_delay[B_LAT-2];
     m_reg_common_d <= m_reg_common;

@@ -16,7 +16,7 @@ module xpm_delaybuf #(
 typedef s_axis.data_pkt_t data_pkt_t;
 typedef s_axis.data_t data_t;
 localparam samp_per_clk = s_axis.samp_per_clk;
-localparam width = $bits(data_pkt_t);
+localparam width = s_axis.width;
 
 alpaca_data_pkt_axis #(
   .dtype(data_t),

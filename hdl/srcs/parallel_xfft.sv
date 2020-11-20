@@ -1,13 +1,15 @@
 `timescale 1ns/1ps
 `default_nettype none
 
+import alpaca_dtypes_pkg::*;
+
 /*******************************************************
   Simple parallel 2-sample input fft from Xilinx fft's
 ********************************************************/
 module parallel_xfft #(
   parameter int FFT_LEN=16,
   parameter int TUSER=8,
-  parameter TWIDDLE_FILE=""
+  parameter twiddle_factor_t WK
 ) (
   input wire logic clk,
   input wire logic rst,
@@ -78,7 +80,7 @@ sv_xfft_0_wrapper xfft_1 (
 
 alpaca_butterfly #(
   .FFT_LEN(FFT_LEN),
-  .TWIDDLE_FILE(TWIDDLE_FILE)
+  .WK(WK)
 ) butterfly_inst (
   .clk(clk),
   .rst(rst),

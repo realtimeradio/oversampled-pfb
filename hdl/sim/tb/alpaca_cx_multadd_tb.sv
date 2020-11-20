@@ -21,7 +21,7 @@ function tb_cx_t cx_mult(real ar, ai, br, bi);
 endfunction
 
 parameter int END = 20;
-parameter int DUT_LAT = 7;
+parameter int DUT_LAT = 8; // pipelined latency: bram=1, cx mult=6, add and sub=1
 
 parameter real WL = (WIDTH+PHASE_WIDTH)+1;          // result word len (growth due to multiplication and one add)
 parameter real FWL = (FRAC_WIDTH+PHASE_FRAC_WIDTH); // fractional length (bits right of decimal)

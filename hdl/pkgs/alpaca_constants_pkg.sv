@@ -29,8 +29,6 @@ parameter PTAPS = 8;                 // (P)   polyphase taps corresponds to numb
 
 parameter DC_FIFO_DEPTH = FFT_LEN/2;
 
-parameter TWIDDLE_FILE="/home/mcb/git/alpaca/oversampled-pfb/hdl/pkgs/twiddle_inverse_n2048_b23.bin";
-
 // Simulation parameters
 parameter ADC_BITS = 14;             // simulation ADC effective bit resolution
 parameter ADC_GAIN = 0.50;

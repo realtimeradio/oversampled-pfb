@@ -30,13 +30,13 @@ endfunction
 
 /*************************************************/
 
-parameter int DUT_LAT = 9; // mult=7, rnd=2
+parameter int DUT_LAT = 10; // pipelined latency: bram=1, cx mult=6, rnd=2
 parameter int END = 40;
 
 parameter real WL = (WIDTH+COEFF_WID)+1;          // result word len (growth due to multiplication and one add)
 parameter real FWL = (FRAC_WIDTH+COEFF_FRAC_WID); // fractional length (bits right of decimal)
-parameter real IWL = WL-FWL;                        // integer word length (bits left of decimal)
-parameter real lsb_scale = 2**(-FWL);               // weight of a single fractional bit
+parameter real IWL = WL-FWL;                      // integer word length (bits left of decimal)
+parameter real lsb_scale = 2**(-FWL);             // weight of a single fractional bit
 
 module cx_multadd_convrnd_tb();
 

@@ -4,9 +4,12 @@
 import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
+// FIR taps
 import alpaca_ospfb_hann_2048_8_coeff_pkg::*;
 //import alpaca_ospfb_hann_512_8_coeff_pkg::*;
 //import alpaca_ospfb_hann_128_8_coeff_pkg::*;
+// Twiddle factors
+import alpaca_ospfb_twiddle_n2048_b23_pkg::*;
 
 // TODO: decide if signals other than valid to allow vip to start capturing (e.g., also use last)
 parameter int FRAMES = 32;
@@ -35,7 +38,7 @@ xpm_ospfb_adc_top #(
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
   .TAPS(TAPS),
-  .TWIDDLE_FILE(TWIDDLE_FILE),
+  .WK(WK),
   .SRC_PERIOD(ADC_PERIOD),
   .F_SOI_NORM(F_SOI_NORM),
   .ADC_GAIN(ADC_GAIN),
