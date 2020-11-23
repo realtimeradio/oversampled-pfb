@@ -22,6 +22,8 @@ parameter FFT_USER_WID = 8;
 // D/SAM_PER_CLK as to not have to carry FFT_LEN/samp_per_clk or DEC_FAC/samp_per_clk
 // everywhere. Would really simplify understanding the code and limitations.
 // Will do this once all the new latency and cores are added
+
+// *NOTE*: FFT_LEN and DEC_FAC must be divisiable by `samp_per_clk`
 parameter FFT_LEN = 2048;            // (M)   polyphase branches
 parameter OSRATIO = 3.0/4.0;
 parameter DEC_FAC = FFT_LEN*OSRATIO; // (D)   decimation factor

@@ -19,7 +19,7 @@ module adc_model #(
 ) (
   input wire logic clk,
   input wire logic rst,
-  input wire logic en,
+  input wire logic en,  // to model another mechanism to mark rfdc data as valid
   alpaca_data_pkt_axis.MST m_axis
 );
   typedef m_axis.data_t axis_t;

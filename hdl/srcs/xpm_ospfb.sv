@@ -62,7 +62,6 @@ module xpm_ospfb_top #(
     .s_axis_aclk(s_axis_aclk),
     .m_axis_aclk(m_axis_aclk),
     .rst(rst),
-    .en(en),
 
     .s_axis(s_axis),
     .m_axis_data(m_axis_Xk),
@@ -100,8 +99,6 @@ module xpm_ospfb #(
   input wire logic m_axis_aclk,  // dsp clock
   input wire logic rst, // TODO: consider calling it s_axis_rst for association with slv domain?
                         //       in really though I need to properly handle the reset...
-  input wire logic en,  // TODO: seemed to now only be used to control the modtimer counter
-                        // shouldn't be too hard to remove now
 
   alpaca_data_pkt_axis.SLV s_axis,
   alpaca_data_pkt_axis.MST m_axis_data,
@@ -197,7 +194,6 @@ xpm_ospfb_datapath #(
 ) datapath_inst (
   .clk(m_axis_aclk),
   .rst(rst),
-  .en(en),
   // data signals
   .s_axis(s_axis_ospfb),
   .m_axis_data(m_axis_data),

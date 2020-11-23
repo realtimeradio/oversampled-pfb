@@ -4,6 +4,165 @@
 import alpaca_constants_pkg::*;
 import alpaca_dtypes_pkg::*;
 
+/******************************************************
+  tap rom for a single PE
+*******************************************************/
+
+module tap_rom #(
+  parameter FFT_LEN=2048,
+  parameter SAMP_PER_CLK=2,
+  parameter COF_SRT=0,
+  parameter branch_taps_t TAPS
+) (
+  input wire logic clk,
+  input wire logic rst,
+  input wire logic en,
+
+  output coeff_pkt_t h
+);
+
+  localparam mem_depth = FFT_LEN/SAMP_PER_CLK;
+  coeff_pkt_t coeff_ram[mem_depth] = TAPS;
+
+  logic [$clog2(mem_depth)-1:0] coeff_ctr;
+  logic [$clog2(mem_depth)-1:0] coeff_rst = COF_SRT;
+
+  always_ff @(posedge clk)
+    if (rst)
+      coeff_ctr <= coeff_rst;
+    else if (en)
+      coeff_ctr <= coeff_ctr - 1;
+
+  assign h = coeff_ram[coeff_ctr];
+
+endmodule : tap_rom
+
+/*******************************************************
+  XPM CX FIR
+*******************************************************/
+
+module xpm_cx_fir #(
+  parameter int FFT_LEN=64,
+  parameter int DEC_FAC=48,
+  parameter int PTAPS=8,
+  parameter LOOPBUF_MEM_TYPE="auto",
+  parameter DATABUF_MEM_TYPE="auto",
+  parameter SUMBUF_MEM_TYPE="auto",
+  parameter fir_taps_t TAPS
+) (
+  input wire logic clk,
+  input wire logic rst,
+
+  alpaca_data_pkt_axis.SLV s_axis,    // adc samples in, tuser=vin to be applied to sum axis
+  alpaca_data_pkt_axis.MST m_axis_im, // polyphase fir sums out, tuser=vout
+  alpaca_data_pkt_axis.MST m_axis_re
+);
+
+localparam samp_per_clk = s_axis.samp_per_clk;
+
+alpaca_data_pkt_axis #(
+  .dtype(sample_t),
+  .SAMP_PER_CLK(samp_per_clk),
+  .TUSER(1)
+) axis_pe_data_im[PTAPS+1](), axis_pe_data_re[PTAPS+1](); // tuser not used
+
+alpaca_data_pkt_axis #(
+  .dtype(sample_t),
+  .SAMP_PER_CLK(samp_per_clk),
+  .TUSER(1)
+) axis_pe_sum_im[PTAPS+1](), axis_pe_sum_re[PTAPS+1](); // tuser for vin
+
+coeff_pkt_t h[PTAPS];
+
+// connect first PE with inputs
+genvar jj;
+generate
+  for (jj=0; jj < samp_per_clk; jj++) begin : route_cx_to_re
+    assign axis_pe_data_im[0].tdata[jj] = s_axis.tdata[jj].im;
+    assign axis_pe_data_re[0].tdata[jj] = s_axis.tdata[jj].re;
+  end
+endgenerate
+
+assign axis_pe_data_im[0].tvalid = s_axis.tvalid;
+assign axis_pe_data_re[0].tvalid = s_axis.tvalid;
+
+assign s_axis.tready = (axis_pe_data_re[0].tready & axis_pe_sum_re[0].tready);
+
+assign axis_pe_sum_im[0].tdata = '0;
+assign axis_pe_sum_re[0].tdata = '0;
+assign axis_pe_sum_im[0].tvalid = s_axis.tvalid;
+assign axis_pe_sum_re[0].tvalid = s_axis.tvalid;
+assign axis_pe_sum_im[0].tuser = s_axis.tuser;
+assign axis_pe_sum_re[0].tuser = s_axis.tuser;
+
+// connect last PE with outputs
+assign m_axis_im.tdata = axis_pe_sum_im[PTAPS].tdata;
+assign m_axis_re.tdata = axis_pe_sum_re[PTAPS].tdata;
+assign m_axis_im.tvalid = axis_pe_sum_im[PTAPS].tvalid;
+assign m_axis_re.tvalid = axis_pe_sum_re[PTAPS].tvalid;
+assign m_axis_im.tuser = axis_pe_sum_im[PTAPS].tuser;
+assign m_axis_re.tuser = axis_pe_sum_re[PTAPS].tuser;
+
+assign axis_pe_data_im[PTAPS].tready = m_axis_im.tready;
+assign axis_pe_data_re[PTAPS].tready = m_axis_re.tready;
+assign axis_pe_sum_im[PTAPS].tready = m_axis_im.tready;
+assign axis_pe_sum_re[PTAPS].tready = m_axis_re.tready;
+
+// Generate the chain of PE's and wire them together
+genvar ii;
+generate
+  for (ii=0; ii < PTAPS; ii++) begin : gen_pe
+    localparam branch_taps_t taps=TAPS[ii*(FFT_LEN/samp_per_clk):(ii+1)*(FFT_LEN/samp_per_clk)-1];
+    xpm_pe #(
+      .FFT_LEN(FFT_LEN),
+      .DEC_FAC(DEC_FAC),
+      .TAPS(taps)
+    ) pe_re (
+      .clk(clk),
+      .rst(rst),
+      .h(h[ii]),
+      .s_axis_data(axis_pe_data_re[ii]),
+      .m_axis_data(axis_pe_data_re[ii+1]),
+
+      .s_axis_sum(axis_pe_sum_re[ii]),   // tuser=vin
+      .m_axis_sum(axis_pe_sum_re[ii+1])  // tuser=vout
+    );
+
+    tap_rom #(
+      .FFT_LEN(FFT_LEN),
+      .SAMP_PER_CLK(samp_per_clk),
+      .COF_SRT(0),
+      .TAPS(taps)
+    ) pe_taps (
+      .clk(clk),
+      .rst(rst),
+      .en(axis_pe_sum_re[ii].tvalid), // default to real data for control
+      .h(h[ii])
+    );
+
+    xpm_pe #(
+      .FFT_LEN(FFT_LEN),
+      .DEC_FAC(DEC_FAC),
+      .TAPS(taps)
+    ) pe_im (
+      .clk(clk),
+      .rst(rst),
+      .h(h[ii]),
+      .s_axis_data(axis_pe_data_im[ii]),
+      .m_axis_data(axis_pe_data_im[ii+1]),
+
+      .s_axis_sum(axis_pe_sum_im[ii]),   // tuser=vin
+      .m_axis_sum(axis_pe_sum_im[ii+1])  // tuser=vout
+    );
+  end
+endgenerate
+
+endmodule : xpm_cx_fir
+
+/*******************************************************
+  XPM FIR
+*******************************************************/
+
 module xpm_fir #(
   parameter int FFT_LEN=64,
   parameter int DEC_FAC=48,
@@ -63,7 +222,7 @@ generate
   end
 endgenerate
 
-endmodule
+endmodule : xpm_fir
 
 /*
   A PE based on the XPM Delaybuf
@@ -74,12 +233,23 @@ endmodule
 
   This PE implments a simple multiply-add (din*h + sin), which would be a single partial sum used in the full
   multiply accumulate operation of an FIR filter.
+
+  The only control within the PE is the decision to pull from the loopback buffer or not using
+  the tuser (vin) signal based on the commutator counter from the top level state machine. When
+  the coefficient rom was part of the PE the address counter was advanced by the axis_sum valid
+  signal that indicated the next valid partial sum input was ready and that a multiply-accumulate
+  should start. Now, the axis_sum valid still controls the address counter but the ROM is one
+  level higher to share between real/imaginary fir processing. So the control is not apparaent
+  and so the PE really is always accepting inputs and computing.
+
+  Since the address counter for each PE is controlled we can just take the coefficient `h` in
+  without logic.  But it seems like it won't cost me too much to just zero out the outputs (unless
+  the axis valid signal has long routing nets.
 */
 
 module xpm_pe #(
   parameter FFT_LEN=64,
   parameter DEC_FAC=48,
-  parameter COF_SRT=0,
   parameter LOOPBUF_MEM_TYPE="auto",
   parameter DATABUF_MEM_TYPE="auto",
   parameter SUMBUF_MEM_TYPE="auto",
@@ -87,6 +257,8 @@ module xpm_pe #(
 ) (
   input wire logic clk,
   input wire logic rst,
+
+  input wire coeff_pkt_t h,
 
   alpaca_data_pkt_axis.SLV s_axis_data,
   alpaca_data_pkt_axis.MST m_axis_data,
@@ -98,18 +270,6 @@ typedef s_axis_data.data_pkt_t data_pkt_t;
 localparam samp_per_clk = s_axis_data.samp_per_clk;
 
 localparam M_D = FFT_LEN-DEC_FAC;
-localparam mem_depth = FFT_LEN/samp_per_clk;
-
-coeff_pkt_t coeff_ram[mem_depth] = TAPS;
-logic [$clog2(mem_depth)-1:0] coeff_ctr;
-
-// TODO: make note how starting phase also would be important to get right here
-logic [$clog2(mem_depth)-1:0] coeff_rst = COF_SRT;
-
-// MAC operation signals
-fir_pkt_t a;
-fir_pkt_t mac;
-coeff_pkt_t h;
 
 // connection signals
 alpaca_data_pkt_axis #(
@@ -120,21 +280,13 @@ alpaca_data_pkt_axis #(
 // tusers not driven on loopbuf interfaces vivado synthesis should complain
 // tuser in the sumbuf interface represents valid in (vin)
 
+// MAC operation signals
+fir_pkt_t a;
+fir_pkt_t mac;
+coeff_pkt_t hin;
 fir_pkt_t din;
 fir_pkt_t sin;
 fir_pkt_t loopbuf_out;
-logic en;
-
-// coeff ctr
-always_ff @(posedge clk)
-  if (rst)
-    coeff_ctr <= coeff_rst;
-  else if (en)
-    coeff_ctr <= coeff_ctr - 1;
-  else
-    coeff_ctr <= coeff_ctr;
-
-assign h = coeff_ram[coeff_ctr];
 
 localparam MULT_LAT = 7; // mult=5 + rnd=2
 fir_pkt_t [MULT_LAT-1:0] databuf_data_delay;
@@ -160,7 +312,8 @@ always_comb begin
   axis_sumbuf.tuser = sumbuf_tuser_delay[MULT_LAT-1]; //vin
   s_axis_sum.tready = axis_sumbuf.tready;
 
-  en = s_axis_sum.tvalid;
+  //hin = s_axis_sum.tvalid ? h : '0; // zero coeff to zero mult-acc
+  hin = h; // could safely do this if needed for efficiency, otherwise could provide zero outputs
   din = s_axis_data.tdata;
   sin = s_axis_sum.tdata;
 

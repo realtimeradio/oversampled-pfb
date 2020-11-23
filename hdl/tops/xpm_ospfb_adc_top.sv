@@ -14,7 +14,7 @@ module xpm_ospfb_adc_top #(
   parameter int DEC_FAC=48,
   parameter int PTAPS=8,
   parameter fir_taps_t TAPS,
-  parameter TWIDDLE_FILE="",
+  parameter twiddle_factor_t WK,
   // source adc
   parameter real SRC_PERIOD=10,
   parameter real F_SOI_NORM=0.27,
@@ -29,7 +29,7 @@ module xpm_ospfb_adc_top #(
   input wire logic s_axis_aclk, // adc clk
   input wire logic m_axis_aclk, // dsp clk
   input wire logic rst,
-  input wire logic en,
+  input wire logic en,  // to model an indication for when to mark rfdc data as valid
   // fft status singals
   alpaca_xfft_status_axis.MST m_axis_fft_status_x2,
   alpaca_xfft_status_axis.MST m_axis_fft_status_x1,
@@ -65,13 +65,12 @@ xpm_ospfb #(
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
   .TAPS(TAPS),
-  .TWIDDLE_FILE(TWIDDLE_FILE),
+  .WK(WK),
   .DC_FIFO_DEPTH(DC_FIFO_DEPTH)
 ) ospfb_inst (
   .s_axis_aclk(s_axis_aclk),
   .m_axis_aclk(m_axis_aclk),
   .rst(rst),
-  .en(en),
 
   .s_axis(s_axis),
   .m_axis_data(m_axis_Xk),

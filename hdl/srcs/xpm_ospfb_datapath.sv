@@ -35,6 +35,34 @@ assign s_axis_im.tready = m_axis_cx.tready;
 
 endmodule : re_to_cx_axis
 
+//
+module cx_to_re_axis (
+  alpaca_data_pkt_axis.SLV s_axis_cx,
+
+  alpaca_data_pkt_axis.MST m_axis_im,
+  alpaca_data_pkt_axis.MST m_axis_re
+);
+
+localparam samp_per_clk = s_axis_cx.samp_per_clk;
+
+genvar ii;
+generate
+  for (ii=0; ii < samp_per_clk; ii++) begin : route_to_re
+    assign m_axis_im.tdata[ii] = s_axis_cx.tdata[ii].im;
+    assign m_axis_re.tdata[ii] = s_axis_cx.tdata[ii].re;
+  end
+endgenerate
+
+// slv passthrough, default to real for control, synthesis could complain about unconnected
+assign m_axis_im.tvalid = s_axis_cx.tvalid;
+assign m_axis_im.tlast  = s_axis_cx.tlast;
+assign m_axis_re.tvalid = s_axis_cx.tvalid;
+assign m_axis_re.tlast  = s_axis_cx.tlast;
+
+assign s_axis_cx.tready = m_axis_re.ready;
+
+endmodule : cx_to_re_axis
+
 // just using alpaca data types for when axis not used (e.g., old phasecomp module)
 module re_to_cx #(
   parameter int SAMP_PER_CLK=2
@@ -71,7 +99,6 @@ module xpm_ospfb_datapath #(
 ) (
   input wire logic clk,
   input wire logic rst,
-  input wire logic en,  // TODO: only used to control the modtimer counter should remove in favor axis control
 
   alpaca_data_pkt_axis.SLV s_axis,                // upstream input data, pkts of complex data
   alpaca_data_pkt_axis.MST m_axis_data,           // OSPFB output data, now Xk from parallel_xfft, not a xilinx fft
@@ -92,7 +119,7 @@ localparam samp_per_clk = s_axis.samp_per_clk;
 logic aresetn;
 assign aresetn = ~rst;
 
-// TODO: only thing dependent on this now is the modtimer ctr, needs moved to proper axis tvalid&tready handshakse
+// TODO: not used, but consider a core reset gated by tvalid and rst
 logic hold_rst;
 
 // for controlling samples -- for parallel samples this steps down multiple input ports when
@@ -101,25 +128,17 @@ logic [$clog2(FFT_LEN/samp_per_clk)-1:0] modtimer;           // decimator phase
 logic [$clog2(FFT_LEN/samp_per_clk)-1:0] rst_val = SRT_PHA;  // starting decimator phase (which port gets first sample)
 
 logic vin;
-fir_pkt_t din_re;
-fir_pkt_t din_im;
+cx_pkt_t din;
 
-alpaca_data_pkt_axis #(
-  .dtype(sample_t),
-  .SAMP_PER_CLK(samp_per_clk),
-  .TUSER(1)
-) s_axis_fir_im(), s_axis_fir_re(), m_axis_fir_im(), m_axis_fir_re();
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) s_axis_fir();
+alpaca_data_pkt_axis #(.dtype(sample_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1) ) m_axis_fir_im(), m_axis_fir_re();
 
 alpaca_data_pkt_axis #(.dtype(sample_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) fir_re_to_cx(), fir_im_to_cx();
 alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) xfft_delay_fifo_axis();
 
-assign s_axis_fir_re.tdata = din_re;
-assign s_axis_fir_re.tvalid = s_axis.tvalid;
-assign s_axis_fir_re.tuser = vin;
-
-assign s_axis_fir_im.tdata = din_im;
-assign s_axis_fir_im.tvalid = s_axis.tvalid;
-assign s_axis_fir_im.tuser = vin;
+assign s_axis_fir.tdata = din;
+assign s_axis_fir.tvalid = s_axis.tvalid;
+assign s_axis_fir.tuser = vin;
 
 //TODO (tlast): is now implemented with new interface... needs to be verifed
 alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) s_axis_fft_data();// tuser not on xfft input
@@ -128,14 +147,14 @@ alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(samp_per_clk), .TUSER(1)) s_a
 alpaca_xfft_config_axis s_axis_fft_config_x1(), s_axis_fft_config_x2();
 
 always_ff @(posedge clk)
-  if (hold_rst)
+  if (rst)
     modtimer <= rst_val;
-  else if (en)
+  else if (s_axis.tvalid)
     modtimer <= modtimer + 1;
   else
     modtimer <= modtimer;
 
-xpm_fir #(
+xpm_cx_fir #(
   .FFT_LEN(FFT_LEN),
   .DEC_FAC(DEC_FAC),
   .PTAPS(PTAPS),
@@ -143,11 +162,12 @@ xpm_fir #(
   .DATABUF_MEM_TYPE(DATABUF_MEM_TYPE),
   .SUMBUF_MEM_TYPE(SUMBUF_MEM_TYPE),
   .TAPS(TAPS)
-) fir_re (
+) fir_inst (
   .clk(clk),
   .rst(rst),
-  .s_axis(s_axis_fir_re), // tuser=vin
-  .m_axis(m_axis_fir_re) // tuser=vout, so far unused
+  .s_axis(s_axis_fir),       // tuser=vin
+  .m_axis_im(m_axis_fir_im), // tuser=vout, so far unused after last PE
+  .m_axis_re(m_axis_fir_re)  // tuser=vout, so far unused after last PE
 );
 
 alpaca_phasecomp #(
@@ -158,21 +178,6 @@ alpaca_phasecomp #(
   .rst(rst),
   .s_axis(m_axis_fir_re),
   .m_axis(fir_re_to_cx)
-);
-
-xpm_fir #(
-  .FFT_LEN(FFT_LEN),
-  .DEC_FAC(DEC_FAC),
-  .PTAPS(PTAPS),
-  .LOOPBUF_MEM_TYPE(LOOPBUF_MEM_TYPE),
-  .DATABUF_MEM_TYPE(DATABUF_MEM_TYPE),
-  .SUMBUF_MEM_TYPE(SUMBUF_MEM_TYPE),
-  .TAPS(TAPS)
-) fir_im (
-  .clk(clk),
-  .rst(rst),
-  .s_axis(s_axis_fir_im), // tuser=vin
-  .m_axis(m_axis_fir_im)  // tuser=vout, so far unused
 );
 
 alpaca_phasecomp #(
@@ -280,8 +285,7 @@ always_ff @(posedge clk)
 always_comb begin
   // default values to prevent latch inferences
   ns = ERR;
-  din_re = 32'haabbccdd; //should never see these values, if so, it is an error
-  din_im = 32'hddccaabb;
+  din = {32'hddccaabb, 32'haabbccdd}; //should never see these values, if so, it is an error
   hold_rst = 1'b1;
 
   // ospfb.py top-level equivalent producing the vin to start the process
@@ -297,8 +301,6 @@ always_comb begin
   */
   vin = 1'b0;
 
-  // TODO: only set once but should be parameterized so that I don't forget it when moving
-  // between M for testing
   // default configuration values {pad (if needed), scale_sched, fwd/inv xform}
   //s_axis_fft_config_x2.tdata = {1'b0, 2'b10, 2'b10, 2'b10, 1'b0}; // N=64 (ospfb fft len/2)
   //s_axis_fft_config_x1.tdata = {1'b0, 2'b10, 2'b10, 2'b10, 1'b0};
@@ -317,15 +319,14 @@ always_comb begin
       WAIT_FIFO: begin
         if (s_axis.tvalid) begin
           hold_rst = 1'b0;
-          s_axis_fft_config_x2.tvalid = 1'b1;   // load the inverse transform and scaling schedule
-          s_axis_fft_config_x1.tvalid = 1'b1;   // load the inverse transform and scaling schedule
+          s_axis_fft_config_x2.tvalid = 1'b1; // load config (inverse transform and scaling schedule)
+          s_axis_fft_config_x1.tvalid = 1'b1; // load config (inverse transform and scaling schedule)
 
-          s_axis.tready = (modtimer < (DEC_FAC/samp_per_clk)) ? 1'b1 : 1'b0; // *NOTE*: DEC_FAC must be divisiable by `samp_per_clk`
+          s_axis.tready = (modtimer < (DEC_FAC/samp_per_clk)) ? 1'b1 : 1'b0;
           vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0; // shouldn't this be in my states as well?
           // move first to FEEDBACK. Although we are loading one sample now this is the last
           // sample of a FORWARD state operation (loading at port 0 then wrapping to port D-1)
-          din_re = {s_axis.tdata[1].re, s_axis.tdata[0].re};
-          din_im = {s_axis.tdata[1].im, s_axis.tdata[0].im};
+          din = s_axis.tdata;
           ns = FEEDBACK;
         end else begin
           ns = WAIT_FIFO;
@@ -337,8 +338,7 @@ always_comb begin
 
         s_axis.tready = (modtimer < (DEC_FAC/samp_per_clk)) ? 1'b1 : 1'b0; // *NOTE*: DEC_FAC must be divisiable by `samp_per_clk`
         vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
-        din_re = {s_axis.tdata[1].re, s_axis.tdata[0].re};
-        din_im = {s_axis.tdata[1].im, s_axis.tdata[0].im};
+        din = s_axis.tdata;
         if (modtimer == (DEC_FAC/samp_per_clk)-1)
           ns = FEEDBACK;
         else
@@ -349,8 +349,7 @@ always_comb begin
         hold_rst = 1'b0;
         s_axis.tready = (modtimer < (DEC_FAC/samp_per_clk)) ? 1'b1 : 1'b0; // *NOTE*: DEC_FAC must be divisiable by `samp_per_clk`
         vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
-        din_re = 32'hdeadbeef; // bogus data for testing, should not be accepted to delaybufs
-        din_im = 32'hbeefdead;
+        din = {32'hbeefdead, 32'hdeadbeef}; // bogus data for testing, should not be accepted to delaybufs
         if (modtimer == (FFT_LEN/samp_per_clk)-1)
           ns = FORWARD;
         else

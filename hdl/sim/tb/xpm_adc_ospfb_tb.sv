@@ -9,6 +9,7 @@ import alpaca_ospfb_hann_2048_8_coeff_pkg::*;
 //import alpaca_ospfb_hann_512_8_coeff_pkg::*;
 //import alpaca_ospfb_hann_128_8_coeff_pkg::*;
 // Twiddle factors
+//import alpaca_ospfb_twiddle_n128_b23_pkg::*;
 import alpaca_ospfb_twiddle_n2048_b23_pkg::*;
 
 // TODO: decide if signals other than valid to allow vip to start capturing (e.g., also use last)
