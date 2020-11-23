@@ -84,6 +84,9 @@ always_comb begin
         m_axis.tdata = m_axis_delaybuf.tdata;
         m_axis.tuser = m_axis_delaybuf.tuser;
       end
+
+      default:
+        ns = ERR;
     endcase
   end
 end

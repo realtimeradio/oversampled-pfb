@@ -120,7 +120,7 @@ logic aresetn;
 assign aresetn = ~rst;
 
 // TODO: not used, but consider a core reset gated by tvalid and rst
-logic hold_rst;
+//logic hold_rst;
 
 // for controlling samples -- for parallel samples this steps down multiple input ports when
 // thinking about commutating samples in a parallel device paradigm
@@ -286,7 +286,7 @@ always_comb begin
   // default values to prevent latch inferences
   ns = ERR;
   din = {32'hddccaabb, 32'haabbccdd}; //should never see these values, if so, it is an error
-  hold_rst = 1'b1;
+  //hold_rst = 1'b1;
 
   // ospfb.py top-level equivalent producing the vin to start the process
   // why modtimer < dec_fac and not dec_fac-1 like in src counter pass through?
@@ -318,7 +318,7 @@ always_comb begin
     case (cs)
       WAIT_FIFO: begin
         if (s_axis.tvalid) begin
-          hold_rst = 1'b0;
+          //hold_rst = 1'b0;
           s_axis_fft_config_x2.tvalid = 1'b1; // load config (inverse transform and scaling schedule)
           s_axis_fft_config_x1.tvalid = 1'b1; // load config (inverse transform and scaling schedule)
 
@@ -334,7 +334,7 @@ always_comb begin
       end
 
       FORWARD: begin
-        hold_rst = 1'b0;
+        //hold_rst = 1'b0;
 
         s_axis.tready = (modtimer < (DEC_FAC/samp_per_clk)) ? 1'b1 : 1'b0; // *NOTE*: DEC_FAC must be divisiable by `samp_per_clk`
         vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
@@ -346,7 +346,7 @@ always_comb begin
       end
 
       FEEDBACK: begin
-        hold_rst = 1'b0;
+        //hold_rst = 1'b0;
         s_axis.tready = (modtimer < (DEC_FAC/samp_per_clk)) ? 1'b1 : 1'b0; // *NOTE*: DEC_FAC must be divisiable by `samp_per_clk`
         vin = (s_axis.tready & s_axis.tvalid) ? 1'b1: 1'b0;
         din = {32'hbeefdead, 32'hdeadbeef}; // bogus data for testing, should not be accepted to delaybufs
@@ -355,6 +355,9 @@ always_comb begin
         else
           ns = FEEDBACK;
       end
+
+      default:
+        ns = ERR;
     endcase // case
   end
 end
