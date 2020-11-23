@@ -12,8 +12,7 @@ module xpm_ospfb_top #(
 ) (
   input wire logic s_axis_aclk,
   input wire logic m_axis_aclk,
-  input wire logic rst,
-  input wire logic en,
+  input wire logic m_rst,
 
   input wire cx_pkt_t s_axis_tdata,
   input wire logic s_axis_tvalid,
@@ -61,7 +60,7 @@ module xpm_ospfb_top #(
   ) ospfb_inst (
     .s_axis_aclk(s_axis_aclk),
     .m_axis_aclk(m_axis_aclk),
-    .rst(rst),
+    .m_rst(m_rst),
 
     .s_axis(s_axis),
     .m_axis_data(m_axis_Xk),
@@ -97,8 +96,7 @@ module xpm_ospfb #(
 ) (
   input wire logic s_axis_aclk,  // adc clock
   input wire logic m_axis_aclk,  // dsp clock
-  input wire logic rst, // TODO: consider calling it s_axis_rst for association with slv domain?
-                        //       in really though I need to properly handle the reset...
+  input wire logic m_rst,        // synchronous reset on dsp clock domain
 
   alpaca_data_pkt_axis.SLV s_axis,
   alpaca_data_pkt_axis.MST m_axis_data,
@@ -132,7 +130,7 @@ xpm_fifo_axis #(
   .CLOCKING_MODE("independent_clock"),
   .FIFO_DEPTH(DC_FIFO_DEPTH),
   .FIFO_MEMORY_TYPE("auto"),
-  .RELATED_CLOCKS(1),
+  .RELATED_CLOCKS(1), // indicates a generated clock (same source different ratio)
   .SIM_ASSERT_CHK(1),
   .TDATA_WIDTH(width)
 ) xpm_fifo_axis_inst (
@@ -169,7 +167,7 @@ xpm_fifo_axis #(
   .m_axis_tready(s_axis_ospfb.tready),
 
   .s_aclk(s_axis_aclk),
-  .s_aresetn(~rst),
+  .s_aresetn(~m_rst),
 
   .s_axis_tdata(s_axis_fifo.tdata),
   .s_axis_tdest('0),
@@ -193,7 +191,7 @@ xpm_ospfb_datapath #(
   .SUMBUF_MEM_TYPE(SUMBUF_MEM_TYPE)
 ) datapath_inst (
   .clk(m_axis_aclk),
-  .rst(rst),
+  .rst(m_rst),
   // data signals
   .s_axis(s_axis_ospfb),
   .m_axis_data(m_axis_data),
