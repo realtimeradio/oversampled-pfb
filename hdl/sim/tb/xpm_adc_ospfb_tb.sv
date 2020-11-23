@@ -21,7 +21,7 @@ parameter int FRAMES = 32;
 
 module xpm_adc_ospfb_tb();
 
-logic adc_clk, dsp_clk, rst, en;
+logic adc_clk, dsp_clk, dsp_rst, en;
 
 alpaca_xfft_status_axis m_axis_fft_status_x2(), m_axis_fft_status_x1();
 
@@ -33,6 +33,7 @@ logic [1:0] event_data_in_channel_halt;
 
 logic vip_full;
 
+// DUT
 xpm_ospfb_adc_top #(
   .SAMP_PER_CLK(SAMP_PER_CLK),
   .FFT_LEN(FFT_LEN),
@@ -50,7 +51,7 @@ xpm_ospfb_adc_top #(
 ) DUT (
   .s_axis_aclk(adc_clk),
   .m_axis_aclk(dsp_clk),
-  .rst(rst),
+  .m_rst(dsp_rst),
   .en(en),
   // fft status signals
   .m_axis_fft_status_x2(m_axis_fft_status_x2),
@@ -91,7 +92,7 @@ initial begin
   adc_clk <= 0; adc_cycles=0;
   forever #(ADC_PERIOD/2) begin
     adc_clk = ~adc_clk;
-    adc_cycles += (1 & adc_clk) & ~rst;
+    adc_cycles += (1 & adc_clk);// & ~rst;
   end
 end
 
@@ -107,10 +108,10 @@ initial begin
 
   $display("Cycle=%4d: **** Starting OSPFB test bench ****", simcycles);
   // reset circuit
-  rst <= 1;
+  dsp_rst <= 1;
   wait_dsp_cycles(FFT_LEN*PTAPS); // reset the pipeline
   @(posedge dsp_clk);
-  @(negedge dsp_clk) rst = 0; en = 1;
+  @(negedge dsp_clk) dsp_rst = 0; en = 1;
 
   // wait until we get out of reset from the ospfb (WAIT_FIFO state)
   @(posedge slv.tready);

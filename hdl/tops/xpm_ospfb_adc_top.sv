@@ -28,7 +28,7 @@ module xpm_ospfb_adc_top #(
 ) (
   input wire logic s_axis_aclk, // adc clk
   input wire logic m_axis_aclk, // dsp clk
-  input wire logic rst,
+  input wire logic m_rst,       // synchronous reset on dsp clock domain
   input wire logic en,  // to model an indication for when to mark rfdc data as valid
   // fft status singals
   alpaca_xfft_status_axis.MST m_axis_fft_status_x2,
@@ -55,7 +55,7 @@ adc_model #(
   .SIGMA_BIT(SIGMA_BIT)
 ) adc_inst (
   .clk(s_axis_aclk),
-  .rst(rst),
+  .rst(m_rst), // should be a rst synchronous to adc or make adc better handle asynch. rsts
   .en(en),
   .m_axis(s_axis)
 );
@@ -70,7 +70,7 @@ xpm_ospfb #(
 ) ospfb_inst (
   .s_axis_aclk(s_axis_aclk),
   .m_axis_aclk(m_axis_aclk),
-  .rst(rst),
+  .m_rst(m_rst),
 
   .s_axis(s_axis),
   .m_axis_data(m_axis_Xk),
@@ -88,7 +88,7 @@ parallel_axis_vip #(
   .DEPTH(FRAMES*(FFT_LEN/SAMP_PER_CLK))
 ) vip_inst (
   .clk(m_axis_aclk),
-  .rst(rst),
+  .rst(m_rst),
   .s_axis(m_axis_Xk),
   .full(vip_full)
 );
