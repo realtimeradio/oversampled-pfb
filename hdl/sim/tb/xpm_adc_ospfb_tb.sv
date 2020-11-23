@@ -65,6 +65,18 @@ xpm_ospfb_adc_top #(
   .vip_full(vip_full)
 );
 
+// bind assertions
+bind DUT alpaca_ospfb_assertions ospfb_assert_inst
+(
+  .clk(m_axis_aclk),
+  .rst(m_rst),
+  .event_frame_started(event_frame_started),
+  .event_tlast_unexpected(event_tlast_unexpected),
+  .event_tlast_missing(event_tlast_missing),
+  .event_fft_overflow(event_fft_overflow),
+  .event_data_in_channel_halt(event_data_in_channel_halt)
+);
+
 // tasks to wait for a cycle in each clock domain
 task wait_adc_cycles(int cycles=1);
   repeat(cycles)
