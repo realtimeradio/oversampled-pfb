@@ -124,7 +124,7 @@ interface axis #(parameter WIDTH) ();
   endfunction
 endinterface
 
-interface alpaca_axis #(parameter type dtype, parameter TUSER) ();
+interface alpaca_axis #(parameter type dtype = logic [WIDTH-1:0], parameter TUSER) ();
 
   dtype tdata;
   logic tvalid, tready;
