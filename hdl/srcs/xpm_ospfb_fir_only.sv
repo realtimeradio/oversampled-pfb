@@ -87,8 +87,8 @@ typedef s_axis.data_pkt_t data_pkt_t;
 localparam width = s_axis.width;
 localparam samp_per_clk = s_axis.samp_per_clk;
 
-alpaca_data_pkt_axis #(.TUSER(1)) s_axis_fifo();  // wires between sample delay and fifo
-alpaca_data_pkt_axis #(.TUSER(1)) s_axis_ospfb(); // wires between dc fifo and ospfb
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(1)) s_axis_fifo();  // wires between sample delay and fifo
+alpaca_data_pkt_axis #(.dtype(cx_t), .SAMP_PER_CLK(SAMP_PER_CLK), .TUSER(1)) s_axis_ospfb(); // wires between dc fifo and ospfb
 
 // As any real source will only provide causal data it seems this should be part
 // of the ospfb as to add the delay's necessary to align the data with the taps
