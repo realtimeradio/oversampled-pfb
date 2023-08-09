@@ -96,9 +96,10 @@ def gen_packed_coeff_pkg_file(h, pkg_info=alpaca_coeff_pkg):
     packed_val = 0
     for (idx, tap) in enumerate(packed_tap):
       # this shift var packs the taps in their natural order of the vector. If
-      # I need to reverse the order we just do, shift = idx
-      tap = toUnsigned(tap, COEFF_WID)  # toUnsigned() prepares the number for the hex formated string without
-      shift = (SAMP_PER_CLK-1)-idx      # python inserting the stupid hex string with '-x0001' to represent negative one
+      # I need to reverse the order we just do, shift = idx.
+      # Before converting to unsigned, cast as native python arb-length int to avoid overflows from numpy types
+      tap = toUnsigned(int(tap), COEFF_WID)  # toUnsigned() prepares the number for the hex formated string without
+      shift = (SAMP_PER_CLK-1)-idx           # python inserting the stupid hex string with '-x0001' to represent negative one
       packed_val = (tap << shift*COEFF_WID) | packed_val
     fp.write("{:d}'h".format(COEFF_WID*SAMP_PER_CLK))
     if (ii==(P*M/SAMP_PER_CLK)-1):
@@ -119,6 +120,7 @@ if __name__=="__main__":
   parser.add_argument('-D', '--DECFAC', type=int, default=48, help="Decimation Rate")
   parser.add_argument('-P', '--Taps', type=int, default=3, help="Polyphase Taps")
   parser.add_argument('-b', '--bits', type=int, default=16, help="Bit resolution")
+  parser.add_argument('-S', '--samp_per_clock', type=int, default=2, help="Samples per clock cycle (a.k.a. SSR factor)")
   parser.add_argument('-w', '--window', type=str, default="hann", help="Filter window (Types: 'hann', 'rect')")
   parser.add_argument('-s', '--save', action='store_true', help="Save coeff to file")
   args = parser.parse_args()
@@ -160,6 +162,7 @@ if __name__=="__main__":
   alpaca_coeff_pkg["ptaps"] = P
   alpaca_coeff_pkg["ntaps"] = M
   alpaca_coeff_pkg["width"] = BITS
+  alpaca_coeff_pkg["samp_per_clk"] = args.samp_per_clock
   gen_packed_coeff_pkg_file(h_quant, alpaca_coeff_pkg)
 
 
